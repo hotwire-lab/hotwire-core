@@ -314,8 +314,6 @@ class WebUsbCdcFlashPort {
       try { await this.device.claimInterface(desc.controlInterfaceNumber); } catch {}
     }
     await this.device.claimInterface(desc.dataInterfaceNumber);
-    try { await this.device.clearHalt('in', desc.inEndpointNumber); } catch {}
-    try { await this.device.clearHalt('out', desc.outEndpointNumber); } catch {}
     this.desc = desc;
     this.currentDtr = false;
     this.currentRts = false;
@@ -371,7 +369,9 @@ class WebUsbCdcFlashPort {
   createStreams() {
     const device = this.device;
     const desc = this.desc;
-    const readSize = Math.max(4096, (desc.inPacketSize || 64) * 64);
+    // Use exact maxPacketSize (64 B on Full-Speed CDC) so SLIP replies that are
+    // an exact multiple of 64 B never stall waiting for a Zero-Length Packet (ZLP).
+    const readSize = Math.max(64, desc.inPacketSize || 64);
     this.readLoopRunning = true;
     const self = this;
 
@@ -467,12 +467,12 @@ const state = {
     flowControl: 0,
     bufferSize: 131072,
     forceDtr: true,
-    forceRts: true,
+    forceRts: false,
   },
   initCmds: new Uint8Array(0),
   storageKey: 'hotwire_last_device',
   dtr: true,
-  rts: true,
+  rts: false,
   status: 'waiting',
   transport: 'none',
   autoConnectEnabled: true,
@@ -642,7 +642,7 @@ async function sendInitCommands(epoch, initialDelayMs = 0) {
   }
   try { await js_write_bytes(cmds); } catch {}
   if (typeof window !== 'undefined') {
-    for (const delay of [400, 1000, 1800]) {
+    for (const delay of [400, 1000, 1800, 2800]) {
       window.setTimeout(() => {
         if (epoch === state.epoch && state.status === 'connected' && !state.handshakeOk) {
           void js_write_bytes(cmds);
@@ -652,22 +652,53 @@ async function sendInitCommands(epoch, initialDelayMs = 0) {
   }
 }
 
-async function waitForFreshUsbDevice(vid, pid, serialNumber, timeoutMs = 3500) {
+async function waitForFreshUsbDevice(
+  vid,
+  pid,
+  serialNumber,
+  timeoutMs = 3500,
+  excludeDevice = null,
+  preferFreshMs = 2200,
+) {
   if (typeof navigator === 'undefined' || !navigator.usb) return null;
-  const deadline = Date.now() + timeoutMs;
+  const started = Date.now();
+  const deadline = started + timeoutMs;
   while (Date.now() < deadline) {
     try {
       const devices = await navigator.usb.getDevices();
-      const exact = devices.find(
+      const elapsed = Date.now() - started;
+      const pool =
+        excludeDevice && elapsed < preferFreshMs
+          ? devices.filter((d) => d !== excludeDevice)
+          : devices;
+      const exact = pool.find(
         (d) =>
           (!vid || d.vendorId === vid) &&
           (!pid || d.productId === pid) &&
           (!serialNumber || !d.serialNumber || d.serialNumber === serialNumber),
       );
       if (exact) return exact;
-      const sameVendor = devices.find((d) => vid && d.vendorId === vid);
+      const sameVendor = pool.find((d) => vid && d.vendorId === vid);
       if (sameVendor) return sameVendor;
-      if (!vid && devices.length > 0) return devices[0];
+      if (!vid && pool.length > 0) return pool[0];
+    } catch {}
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return null;
+}
+
+async function waitForFreshSerialPort(vid, pid, timeoutMs = 3000) {
+  if (typeof navigator === 'undefined' || !navigator.serial) return null;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const ports = await navigator.serial.getPorts();
+      const match = ports.find((p) => {
+        const info = p.getInfo?.() ?? {};
+        return (!vid || info.usbVendorId === vid) && (!pid || info.usbProductId === pid);
+      });
+      if (match) return match;
+      if (!vid && ports.length > 0) return ports[0];
     } catch {}
     await new Promise((r) => setTimeout(r, 200));
   }
@@ -704,7 +735,7 @@ async function openWebSerial(port, cfg) {
     });
     if (epoch !== state.epoch) {
       try { await port.close(); } catch {}
-      return;
+      return false;
     }
     state.webSerialPort = port;
     if (port.writable) state.webSerialWriter = port.writable.getWriter();
@@ -744,10 +775,12 @@ async function openWebSerial(port, cfg) {
     })();
 
     await sendInitCommands(epoch);
+    return true;
   } catch (err) {
     await closeAll(false);
     const msg = err instanceof Error ? err.message : String(err);
     notifyState('waiting', 'none', '', '', 0, 0, false, false, `Failed to open serial port: ${msg}`);
+    return false;
   }
 }
 
@@ -768,25 +801,25 @@ async function openWebUsb(device, cfg, portIdx = 0) {
   try {
     if (!device.opened) await device.open();
     if (!device.configuration) await device.selectConfiguration(1);
-    if (epoch !== state.epoch) return;
+    if (epoch !== state.epoch) return false;
 
     const ports = enumerateWebUsbPorts(device);
     if (ports.length === 0) {
       await device.close();
       notifyState('waiting', 'none', '', '', 0, 0, false, false, 'No supported USB serial endpoints found.');
-      return;
+      return false;
     }
 
     const idx = Math.max(0, Math.min(portIdx, ports.length - 1));
     const desc = ports[idx];
-    // Claim CDC control interface BEFORE data interface so SET_LINE_CODING / SET_CONTROL_LINE_STATE succeed on Android
+    // Claim CDC control interface BEFORE data interface so SET_LINE_CODING / SET_CONTROL_LINE_STATE succeed on Android.
+    // Do NOT call clearHalt() unconditionally on healthy endpoints: CLEAR_FEATURE(ENDPOINT_HALT)
+    // can desync DATA0/DATA1 toggles on Android usbfs + ESP32 native USB-Serial-JTAG.
     if (desc.controlInterfaceNumber !== desc.dataInterfaceNumber) {
       try { await device.claimInterface(desc.controlInterfaceNumber); } catch {}
     }
     await device.claimInterface(desc.dataInterfaceNumber);
-    try { await device.clearHalt('in', desc.inEndpointNumber); } catch {}
-    try { await device.clearHalt('out', desc.outEndpointNumber); } catch {}
-    if (epoch !== state.epoch) return;
+    if (epoch !== state.epoch) return false;
 
     const lines = resolveInitialLines(vid, desc.driverKind, state.cfg);
     state.dtr = lines.dtr;
@@ -805,9 +838,9 @@ async function openWebUsb(device, cfg, portIdx = 0) {
 
     state.webUsbReadActive = true;
     (async () => {
-      // Request 4096 B per transferIn (multiple of 64 B) so Android's USB stack coalesces
-      // high-rate Scope/SDR/Logic frames instead of doing 50-400 IPC roundtrips per frame.
-      const readSize = Math.max(4096, (desc.inPacketSize || 64) * 64);
+      // Request exact endpoint maxPacketSize (64 B on Full-Speed CDC) so transfers complete
+      // immediately even when ESP32 HWCDC sends an exact multiple of 64 B (e.g. 128 B) without a ZLP.
+      const readSize = Math.max(64, desc.inPacketSize || 64);
       try {
         while (state.epoch === epoch && state.webUsbReadActive && device.opened) {
           const res = await device.transferIn(desc.inEndpointNumber, readSize);
@@ -835,8 +868,9 @@ async function openWebUsb(device, cfg, portIdx = 0) {
       }
     })();
 
-    // Give ESP32-S3/C6 USB-Serial-JTAG ~70 ms to settle after DTR/RTS assertion on Android OTG
+    // Give ESP32-S3/C6 USB-Serial-JTAG ~70 ms to settle after DTR assertion on Android OTG
     await sendInitCommands(epoch, 70);
+    return true;
   } catch (err) {
     await closeAll(false);
     const msg = err instanceof Error ? err.message : String(err);
@@ -844,6 +878,7 @@ async function openWebUsb(device, cfg, portIdx = 0) {
       ? `${msg} (Close Arduino IDE / Serial Monitor or use Web Serial on Desktop.)`
       : msg;
     notifyState('waiting', 'none', '', '', 0, 0, false, false, hint);
+    return false;
   }
 }
 
@@ -1261,13 +1296,17 @@ export async function js_flash_firmware(
 
     onLog('[3/4] Writing flash memory...');
     const totalBytes = fileArray.reduce((acc, f) => acc + f.data.byteLength, 0);
-    const isBundledFull = !customFile && flashOffset === 'full';
 
+    // Always pass 'keep' for flashSize / flashMode / flashFreq:
+    // 1. All bundled .bootloader.bin images already carry exact Arduino-compiled headers
+    //    (ESP32-S3: 0x3f = 8MB/80MHz DIO, ESP32-C6: 0x20 = 4MB/80MHz DIO) and valid SHA-256 digests.
+    // 2. esptool-js@0.7.1 has a known bug where patching bootloader headers overwrites C6's
+    //    0x20 clock nibble with invalid 0x2f AND fails to recompute the appended SHA-256 digest.
     await esploader.writeFlash({
       fileArray,
-      flashSize: profile.flash_size || '8MB',
-      flashMode: isBundledFull ? 'dio' : 'keep',
-      flashFreq: isBundledFull ? '80m' : 'keep',
+      flashSize: 'keep',
+      flashMode: 'keep',
+      flashFreq: 'keep',
       eraseAll: false,
       compress: true,
       reportProgress: (fileIndex, written, total) => {
@@ -1281,52 +1320,75 @@ export async function js_flash_firmware(
     });
 
     onLog('[4/4] Flashing complete! Triggering reset...');
+    const isEsp32S3 =
+      profile.board_id === 'esp32s3' ||
+      (typeof chip === 'string' && chip.toUpperCase().includes('S3'));
     let watchdogTriggered = false;
-    if (profile.board_id === 'esp32s3') {
+    if (isEsp32S3) {
+      // Clear RTC_CNTL_OPTION1_REG (FORCE_DOWNLOAD_BOOT) before resetting.
       try {
         await esploader.writeReg(0x6000812c, 0);
-        await esploader.writeReg(0x600080b0, 0x50d83aa1);
-        await esploader.writeReg(0x6000809c, 2000);
-        const curCfg0 = await esploader.readReg(0x60008098);
-        const nextCfg0 = ((curCfg0 & 0x0fe3ffff) | 0xb01c0000) >>> 0;
-        await esploader.writeReg(0x60008098, nextCfg0);
-        await esploader.writeReg(0x600080a8, 0x80000000);
+      } catch {}
+      // Official Espressif esptool ESP32-S3 watchdog_reset():
+      // WDT_EN (1<<31) | WDT_STG0=5 (5<<28) | WDT_CHIP_RESET_EN (1<<8) | WIDTH=2 = 0xD0000102.
+      // Performs a true whole-chip RTC reset that re-samples GPIO0 strapping pins so the
+      // ESP32-S3 reliably exits ROM download mode into the newly flashed firmware.
+      // 8000 RTC_SLOW_CLK ticks (~60 ms) lets the lock write + transport disconnect finish cleanly.
+      try {
+        await esploader.writeReg(0x600080b0, 0x50d83aa1); // Unlock RTC WDT
+        await esploader.writeReg(0x6000809c, 8000);       // ~60 ms timeout
+        await esploader.writeReg(0x60008098, 0xd0000102); // Enable whole-chip RTC WDT reset
+        try { await esploader.writeReg(0x600080b0, 0); } catch {} // Re-lock RTC WDT
         watchdogTriggered = true;
-        await new Promise((r) => setTimeout(r, 150));
+        onLog('ESP32-S3 whole-chip watchdog reset armed.');
       } catch {}
     }
     if (!watchdogTriggered) {
-      try { await esploader.after('hard_reset'); } catch {}
+      // Explicit USB-Serial-JTAG / UART hardware reset pulse (with DTR=false settled first!).
+      // Note: esptool-js@0.7.1 after('hard_reset') omits asserting RTS=true before RTS=false,
+      // and ESP32-C6 forbids RTC WDT reset, so an explicit DTR=0 -> RTS=1 -> RTS=0 pulse is required.
       try {
         await espTransport.setDTR(false);
-        await espTransport.setRTS(true);
-        await new Promise((r) => setTimeout(r, 100));
         await espTransport.setRTS(false);
-        await new Promise((r) => setTimeout(r, 80));
+        await new Promise((r) => setTimeout(r, 50));
+        await espTransport.setRTS(true);
+        await new Promise((r) => setTimeout(r, 150));
+        await espTransport.setRTS(false);
+        await new Promise((r) => setTimeout(r, 150));
+        onLog('Hardware RTS reset pulse sent.');
       } catch {}
     }
+    const serialInfo = !webUsbDevice && port?.getInfo ? port.getInfo() : {};
     try { await espTransport.disconnect(); } catch {}
 
     onProgress(100);
-    onLog('Flash complete! Reconnecting to HotWire...');
-    await new Promise((r) => setTimeout(r, 1400));
+    onLog('Flash complete! Waiting for board reboot & reconnecting...');
+    await new Promise((r) => setTimeout(r, watchdogTriggered ? 1600 : 1200));
     state.flashing = false;
     state.manualDisconnect = false;
     if (webUsbDevice) {
-      // ESP32 watchdog reset re-enumerates USB on Android, invalidating the old USBDevice object.
+      // ESP32-S3 whole-chip watchdog reset re-enumerates USB on Android, invalidating old USBDevice handles.
       const fresh =
-        (await waitForFreshUsbDevice(savedUsbVid, savedUsbPid, savedUsbSerial, 3500)) ||
-        webUsbDevice;
-      try {
-        await openWebUsb(fresh, state.cfg, 0);
-      } catch {
-        scheduleAutoReconnect(null, 800);
+        (await waitForFreshUsbDevice(
+          savedUsbVid,
+          savedUsbPid,
+          savedUsbSerial,
+          4000,
+          watchdogTriggered ? webUsbDevice : null,
+          1000,
+        )) || webUsbDevice;
+      const ok = await openWebUsb(fresh, state.cfg, 0);
+      if (!ok) {
+        scheduleAutoReconnect(null, 900);
       }
     } else {
-      try {
-        await openWebSerial(port, state.cfg);
-      } catch {
-        scheduleAutoReconnect(null, 800);
+      const targetPort =
+        (watchdogTriggered
+          ? await waitForFreshSerialPort(serialInfo.usbVendorId ?? 0, serialInfo.usbProductId ?? 0, 3000)
+          : null) || port;
+      const ok = await openWebSerial(targetPort, state.cfg);
+      if (!ok) {
+        scheduleAutoReconnect(null, 900);
       }
     }
   } finally {

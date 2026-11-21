@@ -73,6 +73,10 @@ pub struct SerialConfig {
 impl SerialConfig {
     /// Default high-throughput CDC-ACM config for ESP32-S3/C6 HotWire hardware tools
     /// (Logic Analyzer, Oscilloscope, SDR).
+    ///
+    /// Uses `DTR=true, RTS=false` (`SET_CONTROL_LINE_STATE = 0x01`), which is the required
+    /// normal run-mode state on ESP32-S3/C6 native USB-Serial-JTAG (`VID 0x303A / PID 0x1001`).
+    /// Asserting `RTS=true` (`0x03`) interferes with the silicon's reset/download-boot circuit.
     pub fn hotwire_cdc(storage_key: impl Into<String>) -> Self {
         Self {
             baud_rate: 921_600,
@@ -82,7 +86,7 @@ impl SerialConfig {
             flow_control: 0,
             buffer_size: 131_072,
             force_dtr: Some(true),
-            force_rts: Some(true),
+            force_rts: Some(false),
             auto_connect: true,
             storage_key: storage_key.into(),
         }
@@ -708,6 +712,7 @@ mod tests {
         let cdc = SerialConfig::hotwire_cdc("hotwire_scope_last");
         assert_eq!(cdc.baud_rate, 921_600);
         assert_eq!(cdc.force_dtr, Some(true));
+        assert_eq!(cdc.force_rts, Some(false));
         let term = SerialConfig::serial_terminal(115_200);
         assert_eq!(term.force_dtr, None);
     }
