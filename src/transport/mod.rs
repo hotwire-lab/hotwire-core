@@ -194,7 +194,10 @@ mod wasm_transport {
     use wasm_bindgen_futures::spawn_local;
 
     use crate::flasher::FirmwareProfile;
-    use crate::protocol::{build_bootloader_cmd, build_get_caps_cmd};
+    use crate::protocol::{
+        build_bootloader_cmd, build_get_caps_cmd, BoardIdentity, FirmwareMismatch, FirmwareVersion,
+        ToolId,
+    };
     use crate::transport::bridge::*;
     use crate::transport::{
         ConnectionStatus, DemoBackend, NoopDemoBackend, SerialConfig, TransportKind,
@@ -585,10 +588,88 @@ mod wasm_transport {
             })
             .unwrap_or_else(|| fallback.to_string())
     }
+
+    /// Guards USB connections by enforcing target SW + minimum firmware version checks
+    /// on incoming `0x83` capabilities frames and firing a mismatch callback if no
+    /// handshake arrives within `timeout_ms`.
+    pub struct HandshakeGuard {
+        expected_tool: ToolId,
+        min_version: FirmwareVersion,
+        timer_id: Option<i32>,
+        timer_cb: Option<Closure<dyn FnMut()>>,
+    }
+
+    impl HandshakeGuard {
+        pub fn new(expected_tool: ToolId) -> Self {
+            Self {
+                expected_tool,
+                min_version: expected_tool.min_firmware_version(),
+                timer_id: None,
+                timer_cb: None,
+            }
+        }
+
+        pub fn with_min_version(expected_tool: ToolId, min_version: FirmwareVersion) -> Self {
+            Self {
+                expected_tool,
+                min_version,
+                timer_id: None,
+                timer_cb: None,
+            }
+        }
+
+        pub fn cancel(&mut self) {
+            if let Some(id) = self.timer_id.take() {
+                if let Some(win) = web_sys::window() {
+                    win.clear_timeout_with_handle(id);
+                }
+            }
+            self.timer_cb = None;
+        }
+
+        /// Starts (or restarts) the handshake timeout for a freshly connected physical USB port.
+        pub fn arm_timeout<F>(&mut self, device_name: String, timeout_ms: i32, on_timeout: F)
+        where
+            F: FnOnce(FirmwareMismatch) + 'static,
+        {
+            self.cancel();
+            let expected = self.expected_tool;
+            let min_ver = self.min_version;
+            let mut cb_opt = Some(on_timeout);
+            let closure = Closure::<dyn FnMut()>::new(move || {
+                if let Some(cb) = cb_opt.take() {
+                    let mismatch =
+                        FirmwareMismatch::no_handshake(expected, min_ver, device_name.clone());
+                    cb(mismatch);
+                }
+            });
+            if let Some(win) = web_sys::window() {
+                if let Ok(id) = win.set_timeout_with_callback_and_timeout_and_arguments_0(
+                    closure.as_ref().unchecked_ref(),
+                    timeout_ms,
+                ) {
+                    self.timer_id = Some(id);
+                    self.timer_cb = Some(closure);
+                }
+            }
+        }
+
+        /// Cancels any pending handshake timeout and validates target SW + minimum firmware version.
+        pub fn verify(&mut self, identity: &BoardIdentity) -> Result<(), FirmwareMismatch> {
+            self.cancel();
+            identity.validate_for_tool(self.expected_tool, self.min_version)
+        }
+    }
+
+    impl Drop for HandshakeGuard {
+        fn drop(&mut self) {
+            self.cancel();
+        }
+    }
 }
 
 #[cfg(feature = "wasm")]
-pub use wasm_transport::HotWireTransport;
+pub use wasm_transport::{HandshakeGuard, HotWireTransport};
 
 #[cfg(test)]
 mod tests {

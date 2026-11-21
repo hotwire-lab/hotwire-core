@@ -4,7 +4,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 
 use crate::flasher::{BoardId, FirmwareProfile};
-use crate::protocol::{BoardIdentity, ToolId};
+use crate::protocol::{BoardIdentity, FirmwareMismatch, ToolId};
 use crate::transport::HotWireTransport;
 
 /// Reusable `esptool-js` Web Flasher panel that supports multiple board profiles,
@@ -16,6 +16,7 @@ pub fn FlasherPanel(
     transport: StoredValue<HotWireTransport, LocalStorage>,
     #[prop(optional)] expected_tool: Option<ToolId>,
     #[prop(optional)] identity: Option<RwSignal<Option<BoardIdentity>>>,
+    #[prop(optional)] mismatch: Option<RwSignal<Option<FirmwareMismatch>>>,
 ) -> impl IntoView {
     let profiles_stored = StoredValue::new(profiles);
     let initial_board = profiles_stored
@@ -33,7 +34,7 @@ pub fn FlasherPanel(
     let flash_offset = RwSignal::new("full".to_string());
     let log_div_ref = NodeRef::<html::Div>::new();
 
-    // Auto-select matching board profile when capabilities handshake completes
+    // Auto-select matching board profile when capabilities handshake or mismatch detects the chip
     if let Some(id_sig) = identity {
         Effect::new(move |_| {
             if let Some(id) = id_sig.get() {
@@ -48,24 +49,31 @@ pub fn FlasherPanel(
             }
         });
     }
+    if let Some(mm_sig) = mismatch {
+        Effect::new(move |_| {
+            if let Some(mm) = mm_sig.get() {
+                if let Some(board) = BoardId::from_chip(mm.chip) {
+                    let target = board.as_str();
+                    let has_profile = profiles_stored
+                        .with_value(|list| list.iter().any(|p| p.board_id == target));
+                    if has_profile {
+                        selected_board_id.set(target.to_string());
+                    }
+                }
+            }
+        });
+    }
 
     let mismatch_message = move || {
+        if let Some(mm) = mismatch.and_then(|s| s.get()) {
+            return Some(mm.summary());
+        }
         let expected = expected_tool?;
         let id = identity?.get()?;
-        if id.matches_tool(expected) {
-            return None;
+        match id.validate(expected) {
+            Ok(()) => None,
+            Err(mm) => Some(mm.summary()),
         }
-        let found_name = id
-            .detected_tool
-            .map(|t| t.label())
-            .unwrap_or("a different HotWire firmware");
-        Some(format!(
-            "Detected {} ({}) on {}. Click Flash Firmware below to install {}.",
-            found_name,
-            id.firmware,
-            id.board,
-            expected.label()
-        ))
     };
 
     let current_profile = move || {

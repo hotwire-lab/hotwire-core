@@ -1,6 +1,6 @@
 [package]
 name = "hotwire-core"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Shared Rust/WASM core for the HotWire hardware tool suite: Web Serial/WebUSB transport, binary framing & handshake protocol, esptool-js Web Flasher, and shared Leptos UI shell."
 license = "Apache-2.0"

@@ -8,7 +8,9 @@ pub use framing::{
     build_get_caps_frame, build_ping_status_cmd, compute_crc16_ccitt, compute_crc8,
     compute_xor_checksum, encode_command_8, encode_frame,
 };
-pub use handshake::{BoardChip, BoardIdentity, ToolId};
+pub use handshake::{
+    BoardChip, BoardIdentity, FirmwareMismatch, FirmwareMismatchKind, FirmwareVersion, ToolId,
+};
 
 pub const PROTOCOL_SYNC_0: u8 = 0xaa;
 pub const PROTOCOL_SYNC_1: u8 = 0x55;

@@ -3,12 +3,16 @@ pub mod gestures;
 #[cfg(feature = "ui")]
 pub mod bottom_sheet;
 #[cfg(feature = "ui")]
+pub mod mismatch_modal;
+#[cfg(feature = "ui")]
 pub mod toolbar;
 
 pub use gestures::{apply_anchored_zoom, apply_horizontal_pan, GestureDelta, PinchPanTracker, TouchPoint};
 
 #[cfg(feature = "ui")]
 pub use bottom_sheet::BottomSheet;
+#[cfg(feature = "ui")]
+pub use mismatch_modal::FirmwareMismatchModal;
 #[cfg(feature = "ui")]
 pub use toolbar::HotWireToolbar;
 
