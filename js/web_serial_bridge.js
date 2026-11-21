@@ -898,6 +898,8 @@ function scheduleAutoReconnect(candidate = null, delayMs = 250, attempt = 0) {
     const last = loadLastDevice();
     const backend = last?.backend || preferredBackend();
     state.reconnecting = true;
+    let opened = false;
+    let hadTarget = false;
     try {
       if (backend === 'webusb' && navigator.usb) {
         const devices = await navigator.usb.getDevices();
@@ -906,8 +908,8 @@ function scheduleAutoReconnect(candidate = null, delayMs = 250, attempt = 0) {
           : devices.find((d) => matchesLastUsbDevice(d, last));
         if (!target && devices.length > 0) target = devices[0];
         if (target) {
-          await openWebUsb(target, state.cfg, 0);
-          return;
+          hadTarget = true;
+          opened = await openWebUsb(target, state.cfg, 0);
         }
       } else if (navigator.serial) {
         const ports = await navigator.serial.getPorts();
@@ -916,18 +918,24 @@ function scheduleAutoReconnect(candidate = null, delayMs = 250, attempt = 0) {
           : ports.find((p) => matchesLastSerialPort(p, last));
         if (!target && ports.length > 0) target = ports[0];
         if (target) {
-          await openWebSerial(target, state.cfg);
-          return;
+          hadTarget = true;
+          opened = await openWebSerial(target, state.cfg);
         }
       }
     } catch {
-      if (attempt < 3 && state.autoConnectEnabled && !state.manualDisconnect && !state.flashing) {
-        state.reconnecting = false;
-        scheduleAutoReconnect(candidate, 500, attempt + 1);
-        return;
-      }
+      opened = false;
     } finally {
       state.reconnecting = false;
+    }
+    if (
+      hadTarget &&
+      !opened &&
+      attempt < 3 &&
+      state.autoConnectEnabled &&
+      !state.manualDisconnect &&
+      !state.flashing
+    ) {
+      scheduleAutoReconnect(candidate, 450 * (attempt + 1), attempt + 1);
     }
   }, delayMs);
 }
@@ -969,6 +977,12 @@ export function js_init_transport(onState, onBytes, cfgJson, initCmds) {
           state.epoch += 1;
           closeAll(false).then(() => notifyState('waiting', 'none', '', '', 0, 0, false, false, 'USB device unplugged'));
         }
+      });
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pagehide', () => {
+        state.epoch += 1;
+        void closeAll(false);
       });
     }
   }
@@ -1035,6 +1049,10 @@ export async function js_disconnect_usb() {
 
 export function js_notify_handshake_ok() {
   state.handshakeOk = true;
+}
+
+export function js_set_init_commands(initCmds) {
+  state.initCmds = initCmds ? new Uint8Array(initCmds) : new Uint8Array(0);
 }
 
 export function js_write_bytes(bytes) {

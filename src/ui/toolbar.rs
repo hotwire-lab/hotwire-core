@@ -15,7 +15,7 @@ pub fn HotWireToolbar(
     on_connect: Callback<()>,
     on_disconnect: Callback<()>,
     on_start_demo: Callback<()>,
-    flasher_open: RwSignal<bool>,
+    #[prop(into)] flasher_open: Signal<bool>,
     on_toggle_flasher: Callback<()>,
     #[prop(optional)] children: Option<Children>,
 ) -> impl IntoView {
@@ -206,6 +206,13 @@ pub fn HotWireToolbar(
                     </button>
                 </div>
             </div>
+
+            {move || {
+                transport
+                    .get()
+                    .error_message
+                    .map(|err| view! { <div class="hw-toolbar-error" role="alert">{err}</div> })
+            }}
         </header>
     }
 }

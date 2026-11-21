@@ -267,6 +267,7 @@ mod wasm_transport {
 
         /// Overrides the initial handshake bytes sent right after opening USB (e.g. empty for raw serial terminal).
         pub fn set_init_commands(&self, bytes: Vec<u8>) {
+            js_set_init_commands(&bytes);
             *self.init_cmds.borrow_mut() = bytes;
         }
 

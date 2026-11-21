@@ -97,6 +97,9 @@ pub fn FlasherPanel(
 
         flashing.set(true);
         flash_error.set(None);
+        if let Some(mm_sig) = mismatch {
+            mm_sig.set(None);
+        }
         flash_progress.set(0);
         flash_logs.set(Vec::new());
 

@@ -11,6 +11,7 @@ extern "C" {
     pub fn js_connect_usb(cfg_json: &str, init_cmds: &[u8]) -> js_sys::Promise;
     pub fn js_disconnect_usb() -> js_sys::Promise;
     pub fn js_notify_handshake_ok();
+    pub fn js_set_init_commands(init_cmds: &[u8]);
     pub fn js_write_bytes(bytes: &[u8]) -> js_sys::Promise;
     pub fn js_set_signals(dtr: bool, rts: bool) -> js_sys::Promise;
     pub fn js_pulse_reset() -> js_sys::Promise;
