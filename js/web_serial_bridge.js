@@ -428,6 +428,7 @@ const state = {
   reconnecting: false,
   reconnectTimer: null,
   listenersRegistered: false,
+  writeQueue: Promise.resolve(),
   onState: null,
   onBytes: null,
 };
@@ -893,22 +894,39 @@ export async function js_disconnect_usb() {
     clearTimeout(state.reconnectTimer);
     state.reconnectTimer = null;
   }
+  // Allow any just-queued STOP / ABORT command to finish flushing before closing USB
+  await Promise.race([
+    state.writeQueue.catch(() => {}),
+    new Promise((r) => setTimeout(r, 120)),
+  ]);
   state.epoch += 1;
   await closeAll(false);
   notifyState('waiting', 'none', '', '', 0, 0, false, false, '');
 }
 
-export async function js_write_bytes(bytes) {
-  if (!bytes || bytes.byteLength === 0 || state.status !== 'connected') return;
-  const payload = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  if (state.transport === 'webserial' && state.webSerialWriter) {
-    await state.webSerialWriter.write(payload);
-  } else if (state.transport === 'webusb' && state.webUsbDevice && state.webUsbSession) {
-    const ep = state.webUsbPorts[state.webUsbPortIdx]?.outEndpointNumber;
-    if (ep != null) {
-      await state.webUsbDevice.transferOut(ep, payload);
-    }
+export function js_write_bytes(bytes) {
+  if (!bytes || bytes.byteLength === 0 || state.status !== 'connected') {
+    return Promise.resolve();
   }
+  const payload = bytes instanceof Uint8Array ? new Uint8Array(bytes) : new Uint8Array(bytes);
+  const myEpoch = state.epoch;
+
+  const task = state.writeQueue
+    .catch(() => {})
+    .then(async () => {
+      if (state.epoch !== myEpoch || state.status !== 'connected') return;
+      if (state.transport === 'webserial' && state.webSerialWriter) {
+        await state.webSerialWriter.write(payload);
+      } else if (state.transport === 'webusb' && state.webUsbDevice && state.webUsbSession) {
+        const ep = state.webUsbPorts[state.webUsbPortIdx]?.outEndpointNumber;
+        if (ep != null) {
+          await state.webUsbDevice.transferOut(ep, payload);
+        }
+      }
+    });
+
+  state.writeQueue = task.catch(() => {});
+  return task;
 }
 
 export async function js_set_signals(dtr, rts) {

@@ -29,7 +29,7 @@ pub fn HotWireToolbar(
         let Some(id) = id_sig.get() else {
             return false;
         };
-        transport.get().status.is_usb_connected() && !id.matches_tool(active_tool)
+        transport.get().status.is_usb_connected() && id.validate(active_tool).is_err()
     };
 
     let status_class = move || {
@@ -45,14 +45,9 @@ pub fn HotWireToolbar(
         let t = transport.get();
         if is_mismatch() {
             if let Some(id) = identity.and_then(|s| s.get()) {
-                return format!(
-                    "Firmware mismatch: {} ({}) connected — click Flasher to switch to {}",
-                    id.detected_tool
-                        .map(|tool| tool.label())
-                        .unwrap_or("other firmware"),
-                    id.firmware,
-                    active_tool.label()
-                );
+                if let Err(mm) = id.validate(active_tool) {
+                    return mm.summary();
+                }
             }
         }
         t.error_message.unwrap_or(t.device_name)
@@ -62,12 +57,16 @@ pub fn HotWireToolbar(
         let t = transport.get();
         if t.status.is_active() {
             if let Some(id) = identity.and_then(|s| s.get()) {
-                if !id.matches_tool(active_tool) && t.status.is_usb_connected() {
-                    let other = id
-                        .detected_tool
-                        .map(|tool| tool.short_label())
-                        .unwrap_or("Other");
-                    format!("{} ({} FW!)", id.board, other)
+                if id.validate(active_tool).is_err() && t.status.is_usb_connected() {
+                    if !id.matches_tool(active_tool) {
+                        let other = id
+                            .detected_tool
+                            .map(|tool| tool.short_label())
+                            .unwrap_or("Other");
+                        format!("{} ({} FW!)", id.board, other)
+                    } else {
+                        format!("{} (Old FW!)", id.board)
+                    }
                 } else if t.transport == TransportKind::Demo {
                     format!("{} (Demo)", id.board)
                 } else {

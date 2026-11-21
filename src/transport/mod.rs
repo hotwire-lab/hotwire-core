@@ -186,7 +186,7 @@ impl DemoBackend for NoopDemoBackend {
 
 #[cfg(feature = "wasm")]
 mod wasm_transport {
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::rc::Rc;
 
     use serde::Deserialize;
@@ -595,6 +595,7 @@ mod wasm_transport {
     pub struct HandshakeGuard {
         expected_tool: ToolId,
         min_version: FirmwareVersion,
+        armed: Rc<Cell<bool>>,
         timer_id: Option<i32>,
         timer_cb: Option<Closure<dyn FnMut()>>,
     }
@@ -604,6 +605,7 @@ mod wasm_transport {
             Self {
                 expected_tool,
                 min_version: expected_tool.min_firmware_version(),
+                armed: Rc::new(Cell::new(false)),
                 timer_id: None,
                 timer_cb: None,
             }
@@ -613,12 +615,14 @@ mod wasm_transport {
             Self {
                 expected_tool,
                 min_version,
+                armed: Rc::new(Cell::new(false)),
                 timer_id: None,
                 timer_cb: None,
             }
         }
 
         pub fn cancel(&mut self) {
+            self.armed.set(false);
             if let Some(id) = self.timer_id.take() {
                 if let Some(win) = web_sys::window() {
                     win.clear_timeout_with_handle(id);
@@ -633,10 +637,16 @@ mod wasm_transport {
             F: FnOnce(FirmwareMismatch) + 'static,
         {
             self.cancel();
+            let token = Rc::new(Cell::new(true));
+            self.armed = token.clone();
             let expected = self.expected_tool;
             let min_ver = self.min_version;
             let mut cb_opt = Some(on_timeout);
             let closure = Closure::<dyn FnMut()>::new(move || {
+                if !token.get() {
+                    return;
+                }
+                token.set(false);
                 if let Some(cb) = cb_opt.take() {
                     let mismatch =
                         FirmwareMismatch::no_handshake(expected, min_ver, device_name.clone());

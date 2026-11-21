@@ -53,15 +53,6 @@ impl FrameDemuxer {
         self.buffer.clear();
     }
 
-    fn matches_rule(&self, type_id: u8, len: usize) -> bool {
-        if len > self.max_payload_len {
-            return false;
-        }
-        self.rules
-            .iter()
-            .any(|r| r.type_id == type_id && len >= r.min_len && len <= r.max_len)
-    }
-
     /// Feeds incoming bytes, invoking `on_frame` for each valid binary frame and
     /// discarding non-frame bytes.
     pub fn feed<F>(&mut self, chunk: &[u8], on_frame: F)
@@ -73,6 +64,10 @@ impl FrameDemuxer {
 
     /// Feeds incoming bytes, invoking `on_frame` for each valid binary frame and
     /// `on_text` for interleaved non-frame bytes (e.g. serial console logs).
+    ///
+    /// Uses a zero-copy fast path when no partial frame is buffered from the previous
+    /// chunk, and reuses the internal buffer in-place otherwise to avoid per-chunk
+    /// heap allocations on high-rate USB streams.
     pub fn feed_with_text<F, T>(&mut self, chunk: &[u8], mut on_frame: F, mut on_text: T)
     where
         F: FnMut(RawFrame<'_>),
@@ -82,45 +77,105 @@ impl FrameDemuxer {
             return;
         }
 
-        let mut combined = Vec::with_capacity(self.buffer.len() + chunk.len());
-        combined.extend_from_slice(&self.buffer);
-        combined.extend_from_slice(chunk);
+        let max_tail = self.max_payload_len + 16;
 
+        if self.buffer.is_empty() {
+            let cursor = Self::scan_slice(
+                &self.rules,
+                self.max_payload_len,
+                chunk,
+                &mut on_frame,
+                &mut on_text,
+            );
+            if cursor < chunk.len() {
+                let remaining = &chunk[cursor..];
+                if remaining.len() <= max_tail {
+                    self.buffer.extend_from_slice(remaining);
+                } else {
+                    let drop_len = remaining.len() - max_tail;
+                    on_text(&remaining[..drop_len]);
+                    self.buffer.extend_from_slice(&remaining[drop_len..]);
+                }
+            }
+            return;
+        }
+
+        self.buffer.extend_from_slice(chunk);
+        let cursor = Self::scan_slice(
+            &self.rules,
+            self.max_payload_len,
+            &self.buffer,
+            &mut on_frame,
+            &mut on_text,
+        );
+
+        let total_len = self.buffer.len();
+        if cursor >= total_len {
+            self.buffer.clear();
+        } else {
+            let remaining_len = total_len - cursor;
+            let keep_start = if remaining_len <= max_tail {
+                cursor
+            } else {
+                let drop_len = remaining_len - max_tail;
+                on_text(&self.buffer[cursor..cursor + drop_len]);
+                cursor + drop_len
+            };
+            let keep_len = total_len - keep_start;
+            self.buffer.copy_within(keep_start..total_len, 0);
+            self.buffer.truncate(keep_len);
+        }
+    }
+
+    fn scan_slice<F, T>(
+        rules: &[FrameRule],
+        max_payload_len: usize,
+        data: &[u8],
+        on_frame: &mut F,
+        on_text: &mut T,
+    ) -> usize
+    where
+        F: FnMut(RawFrame<'_>),
+        T: FnMut(&[u8]),
+    {
         let mut cursor = 0usize;
         let mut text_start = 0usize;
-        let mut pending_text: Vec<u8> = Vec::new();
+        let len = data.len();
 
-        while cursor < combined.len() {
-            if combined[cursor] != PROTOCOL_SYNC_0 {
+        while cursor < len {
+            if data[cursor] != PROTOCOL_SYNC_0 {
                 cursor += 1;
                 continue;
             }
-            if cursor + 1 >= combined.len() {
+            if cursor + 1 >= len {
                 break;
             }
-            if combined[cursor + 1] != PROTOCOL_SYNC_1 {
+            if data[cursor + 1] != PROTOCOL_SYNC_1 {
                 cursor += 1;
                 continue;
             }
-            if cursor + 5 > combined.len() {
+            if cursor + 5 > len {
                 break;
             }
 
-            let type_id = combined[cursor + 2];
-            let payload_len =
-                (combined[cursor + 3] as usize) | ((combined[cursor + 4] as usize) << 8);
+            let type_id = data[cursor + 2];
+            let payload_len = (data[cursor + 3] as usize) | ((data[cursor + 4] as usize) << 8);
 
-            if !self.matches_rule(type_id, payload_len) {
+            let valid_rule = payload_len <= max_payload_len
+                && rules.iter().any(|r| {
+                    r.type_id == type_id && payload_len >= r.min_len && payload_len <= r.max_len
+                });
+            if !valid_rule {
                 cursor += 1;
                 continue;
             }
 
             let total_frame_len = 6 + payload_len;
-            if cursor + total_frame_len > combined.len() {
+            if cursor + total_frame_len > len {
                 break;
             }
 
-            let frame_slice = &combined[cursor..cursor + total_frame_len];
+            let frame_slice = &data[cursor..cursor + total_frame_len];
             let expected_xor = compute_xor_checksum(&frame_slice[..total_frame_len - 1]);
             let actual_xor = frame_slice[total_frame_len - 1];
 
@@ -130,11 +185,7 @@ impl FrameDemuxer {
             }
 
             if cursor > text_start {
-                pending_text.extend_from_slice(&combined[text_start..cursor]);
-            }
-            if !pending_text.is_empty() {
-                on_text(&pending_text);
-                pending_text.clear();
+                on_text(&data[text_start..cursor]);
             }
 
             on_frame(RawFrame {
@@ -146,25 +197,10 @@ impl FrameDemuxer {
         }
 
         if cursor > text_start {
-            pending_text.extend_from_slice(&combined[text_start..cursor]);
-        }
-        if !pending_text.is_empty() {
-            on_text(&pending_text);
+            on_text(&data[text_start..cursor]);
         }
 
-        self.buffer.clear();
-        if cursor < combined.len() {
-            let remaining = &combined[cursor..];
-            // Bound buffered tail in case of pathological noise
-            let cap = self.max_payload_len + 16;
-            if remaining.len() <= cap {
-                self.buffer.extend_from_slice(remaining);
-            } else {
-                on_text(&remaining[..remaining.len() - cap]);
-                self.buffer
-                    .extend_from_slice(&remaining[remaining.len() - cap..]);
-            }
-        }
+        cursor
     }
 }
 
@@ -226,5 +262,26 @@ mod tests {
         demux.feed(&stream, |f| frames.push((f.type_id, f.payload.to_vec())));
 
         assert_eq!(frames, vec![(0x81, vec![9, 8, 7, 6])]);
+    }
+
+    #[test]
+    fn fast_path_leaves_buffer_empty_on_aligned_frames() {
+        let mut demux = FrameDemuxer::new(vec![FrameRule::new(0x86, 4, 1024)]);
+        let frame = encode_frame(0x86, &[10, 20, 30, 40]);
+
+        let mut received = Vec::new();
+        demux.feed(&frame, |f| received.push((f.type_id, f.payload.to_vec())));
+        assert_eq!(received, vec![(0x86, vec![10, 20, 30, 40])]);
+        assert!(demux.buffer.is_empty());
+
+        // Split frame across two chunks, then aligned frame again
+        let (left, right) = frame.split_at(4);
+        demux.feed(left, |f| received.push((f.type_id, f.payload.to_vec())));
+        assert_eq!(received.len(), 1);
+        assert_eq!(demux.buffer.len(), 4);
+
+        demux.feed(right, |f| received.push((f.type_id, f.payload.to_vec())));
+        assert_eq!(received.len(), 2);
+        assert!(demux.buffer.is_empty());
     }
 }

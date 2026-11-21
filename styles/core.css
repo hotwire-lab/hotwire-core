@@ -151,7 +151,8 @@
   color: var(--muted);
 }
 
-.hw-spacer {
+.hw-spacer,
+.control-spacer {
   flex: 1;
 }
 
