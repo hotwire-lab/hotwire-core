@@ -462,6 +462,14 @@ mod wasm_transport {
             });
         }
 
+        /// Signals the JS transport that a valid `0x83` capabilities handshake was received,
+        /// cancelling any remaining initial probe retries so firmware setup is never re-triggered.
+        pub fn notify_handshake_ok(&self) {
+            if self.snapshot.borrow().status.is_usb_connected() {
+                js_notify_handshake_ok();
+            }
+        }
+
         pub fn send_bytes(&self, bytes: &[u8]) {
             if self.snapshot.borrow().status == ConnectionStatus::Demo {
                 let reply = self.demo.borrow_mut().handle_command(bytes);

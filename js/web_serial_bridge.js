@@ -287,6 +287,8 @@ class WebUsbCdcFlashPort {
     this.readable = null;
     this.writable = null;
     this.desc = null;
+    this.currentDtr = false;
+    this.currentRts = false;
     this.readLoopRunning = false;
     this.controlQueue = Promise.resolve();
   }
@@ -294,6 +296,9 @@ class WebUsbCdcFlashPort {
   getInfo() {
     return { usbVendorId: this.device.vendorId, usbProductId: this.device.productId };
   }
+
+  addEventListener() {}
+  removeEventListener() {}
 
   async open(options = { baudRate: 115200 }) {
     if (this.device.opened) await this.close();
@@ -309,7 +314,11 @@ class WebUsbCdcFlashPort {
       try { await this.device.claimInterface(desc.controlInterfaceNumber); } catch {}
     }
     await this.device.claimInterface(desc.dataInterfaceNumber);
+    try { await this.device.clearHalt('in', desc.inEndpointNumber); } catch {}
+    try { await this.device.clearHalt('out', desc.outEndpointNumber); } catch {}
     this.desc = desc;
+    this.currentDtr = false;
+    this.currentRts = false;
     await this.setBaudRate(options.baudRate || 115200);
     await this.setSignals({ dataTerminalReady: false, requestToSend: false });
     this.createStreams();
@@ -317,31 +326,44 @@ class WebUsbCdcFlashPort {
 
   async setBaudRate(baudRate) {
     if (!this.desc || !this.device.opened) return;
-    try {
-      await this.device.controlTransferOut(
-        { requestType: 'class', recipient: 'interface', request: 0x20, value: 0, index: this.desc.controlInterfaceNumber },
-        encodeCdcLineCoding({ baudRate, dataBits: 8, stopBits: 1, parity: 0 }),
-      );
-    } catch {}
+    const idx = this.desc.controlInterfaceNumber;
+    this.controlQueue = this.controlQueue
+      .catch(() => {})
+      .then(async () => {
+        if (!this.device.opened) return;
+        try {
+          await this.device.controlTransferOut(
+            { requestType: 'class', recipient: 'interface', request: 0x20, value: 0, index: idx },
+            encodeCdcLineCoding({ baudRate, dataBits: 8, stopBits: 1, parity: 0 }),
+          );
+        } catch {}
+      });
+    return this.controlQueue;
   }
 
   setSignals(signals = {}) {
     if (!this.desc || !this.device.opened) return Promise.resolve();
-    const dtr = Boolean(signals.dataTerminalReady);
-    const rts = Boolean(signals.requestToSend);
-    const value = (dtr ? 1 : 0) | (rts ? 2 : 0);
+    // Preserve whichever line esptool-js omitted (essential for UsbJtagSerialReset!)
+    if (signals.dataTerminalReady !== undefined) {
+      this.currentDtr = Boolean(signals.dataTerminalReady);
+    }
+    if (signals.requestToSend !== undefined) {
+      this.currentRts = Boolean(signals.requestToSend);
+    }
+    const value = (this.currentDtr ? 1 : 0) | (this.currentRts ? 2 : 0);
     const index = this.desc.controlInterfaceNumber;
     this.controlQueue = this.controlQueue
       .catch(() => {})
-      .then(() =>
-        this.device.controlTransferOut({
+      .then(async () => {
+        if (!this.device.opened) return;
+        await this.device.controlTransferOut({
           requestType: 'class',
           recipient: 'interface',
           request: 0x22,
           value,
           index,
-        }),
-      )
+        });
+      })
       .catch(() => {});
     return this.controlQueue;
   }
@@ -349,6 +371,7 @@ class WebUsbCdcFlashPort {
   createStreams() {
     const device = this.device;
     const desc = this.desc;
+    const readSize = Math.max(4096, (desc.inPacketSize || 64) * 64);
     this.readLoopRunning = true;
     const self = this;
 
@@ -356,8 +379,12 @@ class WebUsbCdcFlashPort {
       async pull(controller) {
         while (self.readLoopRunning && device.opened) {
           try {
-            const res = await device.transferIn(desc.inEndpointNumber, Math.max(64, desc.inPacketSize));
+            const res = await device.transferIn(desc.inEndpointNumber, readSize);
             if (!self.readLoopRunning) break;
+            if (res.status === 'stall') {
+              try { await device.clearHalt('in', desc.inEndpointNumber); } catch {}
+              continue;
+            }
             if (res.status === 'ok' && res.data && res.data.byteLength > 0) {
               controller.enqueue(new Uint8Array(res.data.buffer, res.data.byteOffset, res.data.byteLength));
               return;
@@ -375,23 +402,49 @@ class WebUsbCdcFlashPort {
 
     this.writable = new WritableStream({
       async write(chunk) {
-        if (!device.opened) return;
+        if (!device.opened) throw new Error('USB CDC device is not open');
         const bytes = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
-        await device.transferOut(desc.outEndpointNumber, bytes);
+        // Chunk writes to <= 2048 B to avoid Android WebUSB bulkTransfer buffer limits
+        const MAX_CHUNK = 2048;
+        for (let off = 0; off < bytes.byteLength; off += MAX_CHUNK) {
+          const slice = bytes.slice(off, Math.min(bytes.byteLength, off + MAX_CHUNK));
+          let res = await device.transferOut(desc.outEndpointNumber, slice);
+          if (res.status === 'stall') {
+            try { await device.clearHalt('out', desc.outEndpointNumber); } catch {}
+            res = await device.transferOut(desc.outEndpointNumber, slice);
+          }
+          if (res.status !== 'ok') {
+            throw new Error(`USB transferOut failed: ${res.status}`);
+          }
+        }
       },
     });
   }
 
   async close() {
     this.readLoopRunning = false;
-    if (this.desc && this.device.opened) {
-      try { await this.device.releaseInterface(this.desc.dataInterfaceNumber); } catch {}
-      if (this.desc.controlInterfaceNumber !== this.desc.dataInterfaceNumber) {
-        try { await this.device.releaseInterface(this.desc.controlInterfaceNumber); } catch {}
-      }
-    }
-    try { if (this.device.opened) await this.device.close(); } catch {}
+    this.readable = null;
+    this.writable = null;
+    const desc = this.desc;
     this.desc = null;
+    if (this.device.opened) {
+      if (desc) {
+        try {
+          await this.device.controlTransferOut({
+            requestType: 'class',
+            recipient: 'interface',
+            request: 0x22,
+            value: 0,
+            index: desc.controlInterfaceNumber,
+          });
+        } catch {}
+        try { await this.device.releaseInterface(desc.dataInterfaceNumber); } catch {}
+        if (desc.controlInterfaceNumber !== desc.dataInterfaceNumber) {
+          try { await this.device.releaseInterface(desc.controlInterfaceNumber); } catch {}
+        }
+      }
+      try { await this.device.close(); } catch {}
+    }
   }
 }
 
@@ -428,6 +481,7 @@ const state = {
   reconnecting: false,
   reconnectTimer: null,
   listenersRegistered: false,
+  handshakeOk: false,
   writeQueue: Promise.resolve(),
   onState: null,
   onBytes: null,
@@ -559,10 +613,14 @@ async function closeAll(preserveSerialPortRef = false) {
   if (state.webUsbDevice) {
     const dev = state.webUsbDevice;
     const ports = state.webUsbPorts;
+    const activeSession = state.webUsbSession;
     state.webUsbDevice = null;
     state.webUsbPorts = [];
     state.webUsbSession = null;
     try {
+      if (activeSession && dev.opened) {
+        try { await activeSession.setControlLines(false, false); } catch {}
+      }
       for (const p of ports) {
         try { await dev.releaseInterface(p.dataInterfaceNumber); } catch {}
         if (p.controlInterfaceNumber !== p.dataInterfaceNumber) {
@@ -575,21 +633,50 @@ async function closeAll(preserveSerialPortRef = false) {
   await releaseWakeLock();
 }
 
-async function sendInitCommands(epoch) {
+async function sendInitCommands(epoch, initialDelayMs = 0) {
   const cmds = state.initCmds;
   if (!cmds || cmds.byteLength === 0) return;
+  if (initialDelayMs > 0) {
+    await new Promise((r) => setTimeout(r, initialDelayMs));
+    if (epoch !== state.epoch || state.status !== 'connected' || state.handshakeOk) return;
+  }
   try { await js_write_bytes(cmds); } catch {}
   if (typeof window !== 'undefined') {
-    window.setTimeout(() => {
-      if (epoch === state.epoch && state.status === 'connected') {
-        void js_write_bytes(cmds);
-      }
-    }, 250);
+    for (const delay of [400, 1000, 1800]) {
+      window.setTimeout(() => {
+        if (epoch === state.epoch && state.status === 'connected' && !state.handshakeOk) {
+          void js_write_bytes(cmds);
+        }
+      }, delay);
+    }
   }
+}
+
+async function waitForFreshUsbDevice(vid, pid, serialNumber, timeoutMs = 3500) {
+  if (typeof navigator === 'undefined' || !navigator.usb) return null;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const devices = await navigator.usb.getDevices();
+      const exact = devices.find(
+        (d) =>
+          (!vid || d.vendorId === vid) &&
+          (!pid || d.productId === pid) &&
+          (!serialNumber || !d.serialNumber || d.serialNumber === serialNumber),
+      );
+      if (exact) return exact;
+      const sameVendor = devices.find((d) => vid && d.vendorId === vid);
+      if (sameVendor) return sameVendor;
+      if (!vid && devices.length > 0) return devices[0];
+    } catch {}
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return null;
 }
 
 async function openWebSerial(port, cfg) {
   state.epoch += 1;
+  state.handshakeOk = false;
   const epoch = state.epoch;
   await closeAll(false);
   state.cfg = { ...state.cfg, ...cfg };
@@ -666,6 +753,7 @@ async function openWebSerial(port, cfg) {
 
 async function openWebUsb(device, cfg, portIdx = 0) {
   state.epoch += 1;
+  state.handshakeOk = false;
   const epoch = state.epoch;
   await closeAll(false);
   state.cfg = { ...state.cfg, ...cfg };
@@ -691,10 +779,13 @@ async function openWebUsb(device, cfg, portIdx = 0) {
 
     const idx = Math.max(0, Math.min(portIdx, ports.length - 1));
     const desc = ports[idx];
-    await device.claimInterface(desc.dataInterfaceNumber);
+    // Claim CDC control interface BEFORE data interface so SET_LINE_CODING / SET_CONTROL_LINE_STATE succeed on Android
     if (desc.controlInterfaceNumber !== desc.dataInterfaceNumber) {
       try { await device.claimInterface(desc.controlInterfaceNumber); } catch {}
     }
+    await device.claimInterface(desc.dataInterfaceNumber);
+    try { await device.clearHalt('in', desc.inEndpointNumber); } catch {}
+    try { await device.clearHalt('out', desc.outEndpointNumber); } catch {}
     if (epoch !== state.epoch) return;
 
     const lines = resolveInitialLines(vid, desc.driverKind, state.cfg);
@@ -714,13 +805,15 @@ async function openWebUsb(device, cfg, portIdx = 0) {
 
     state.webUsbReadActive = true;
     (async () => {
-      const readSize = Math.max(64, desc.inPacketSize);
+      // Request 4096 B per transferIn (multiple of 64 B) so Android's USB stack coalesces
+      // high-rate Scope/SDR/Logic frames instead of doing 50-400 IPC roundtrips per frame.
+      const readSize = Math.max(4096, (desc.inPacketSize || 64) * 64);
       try {
         while (state.epoch === epoch && state.webUsbReadActive && device.opened) {
           const res = await device.transferIn(desc.inEndpointNumber, readSize);
           if (!state.webUsbReadActive || state.epoch !== epoch) break;
           if (res.status === 'stall') {
-            await device.clearHalt?.('in', desc.inEndpointNumber);
+            try { await device.clearHalt('in', desc.inEndpointNumber); } catch {}
             continue;
           }
           if (res.status === 'ok' && res.data && res.data.byteLength > 0) {
@@ -742,7 +835,8 @@ async function openWebUsb(device, cfg, portIdx = 0) {
       }
     })();
 
-    await sendInitCommands(epoch);
+    // Give ESP32-S3/C6 USB-Serial-JTAG ~70 ms to settle after DTR/RTS assertion on Android OTG
+    await sendInitCommands(epoch, 70);
   } catch (err) {
     await closeAll(false);
     const msg = err instanceof Error ? err.message : String(err);
@@ -904,6 +998,10 @@ export async function js_disconnect_usb() {
   notifyState('waiting', 'none', '', '', 0, 0, false, false, '');
 }
 
+export function js_notify_handshake_ok() {
+  state.handshakeOk = true;
+}
+
 export function js_write_bytes(bytes) {
   if (!bytes || bytes.byteLength === 0 || state.status !== 'connected') {
     return Promise.resolve();
@@ -920,7 +1018,15 @@ export function js_write_bytes(bytes) {
       } else if (state.transport === 'webusb' && state.webUsbDevice && state.webUsbSession) {
         const ep = state.webUsbPorts[state.webUsbPortIdx]?.outEndpointNumber;
         if (ep != null) {
-          await state.webUsbDevice.transferOut(ep, payload);
+          const MAX_CHUNK = 2048;
+          for (let off = 0; off < payload.byteLength; off += MAX_CHUNK) {
+            const slice = payload.slice(off, Math.min(payload.byteLength, off + MAX_CHUNK));
+            let res = await state.webUsbDevice.transferOut(ep, slice);
+            if (res.status === 'stall') {
+              try { await state.webUsbDevice.clearHalt('out', ep); } catch {}
+              await state.webUsbDevice.transferOut(ep, slice);
+            }
+          }
         }
       }
     });
@@ -1012,21 +1118,56 @@ export async function js_flash_firmware(
 
   let port = null;
   let webUsbDevice = null;
+  let savedUsbVid = 0;
+  let savedUsbPid = 0;
+  let savedUsbSerial = '';
 
   try {
     onLog(`[1/4] Preparing to flash ${profile.label}...`);
     if (useWebUsb && navigator.usb) {
       const activeUsb = forceOtherPort ? null : state.webUsbDevice;
       if (!forceOtherPort && state.transport === 'webusb' && activeUsb) {
-        onLog('Sending 0xF0 bootloader entry command & closing WebUSB transport...');
-        try { await js_write_bytes(bootloaderCmd); } catch {}
-        await new Promise((r) => setTimeout(r, 250));
-        state.epoch += 1;
-        await closeAll(true);
-        webUsbDevice = activeUsb;
+        savedUsbVid = activeUsb.vendorId ?? 0;
+        savedUsbPid = activeUsb.productId ?? 0;
+        savedUsbSerial = activeUsb.serialNumber ?? '';
+        const isNativeHwCdc = savedUsbVid === 0x303a && savedUsbPid === 0x1001;
+        if (isNativeHwCdc) {
+          // On native ESP32-S3/C6 USB-Serial-JTAG, avoid 0xF0 esp_restart() over Android WebUSB
+          // because re-enumeration detaches the active USBDevice handle; let esptool-js perform
+          // hardware UsbJtagSerialReset directly over the open CDC control lines instead.
+          onLog('Closing app WebUSB session for native USB-Serial-JTAG flashing...');
+          state.epoch += 1;
+          await closeAll(true);
+          await new Promise((r) => setTimeout(r, 150));
+          webUsbDevice = activeUsb;
+        } else {
+          onLog('Sending 0xF0 bootloader entry command & waiting for USB re-enumeration...');
+          try { await js_write_bytes(bootloaderCmd); } catch {}
+          await new Promise((r) => setTimeout(r, 200));
+          state.epoch += 1;
+          await closeAll(true);
+          await new Promise((r) => setTimeout(r, 450));
+          webUsbDevice = (await waitForFreshUsbDevice(savedUsbVid, savedUsbPid, savedUsbSerial, 3000)) || activeUsb;
+        }
       } else {
-        onLog('Select the XIAO ESP32 USB-JTAG / CDC device in the browser WebUSB prompt...');
-        webUsbDevice = await navigator.usb.requestDevice({ filters: WEBUSB_FILTERS });
+        if (!forceOtherPort) {
+          // Reuse an already-authorized Espressif/Seeed device (e.g. right after mismatch auto-disconnect)
+          try {
+            const existing = await navigator.usb.getDevices();
+            const esp = existing.find((d) => d.vendorId === 0x303a || d.vendorId === 0x2886);
+            if (esp) {
+              webUsbDevice = esp;
+              onLog(`Using authorized USB device (${formatVidPid(esp.vendorId, esp.productId)})...`);
+            }
+          } catch {}
+        }
+        if (!webUsbDevice) {
+          onLog('Select the XIAO ESP32 USB-JTAG / CDC device in the browser WebUSB prompt...');
+          webUsbDevice = await navigator.usb.requestDevice({ filters: WEBUSB_FILTERS });
+        }
+        savedUsbVid = webUsbDevice.vendorId ?? 0;
+        savedUsbPid = webUsbDevice.productId ?? 0;
+        savedUsbSerial = webUsbDevice.serialNumber ?? '';
       }
       port = new WebUsbCdcFlashPort(webUsbDevice);
     } else if (navigator.serial) {
@@ -1081,20 +1222,22 @@ export async function js_flash_firmware(
 
     onLog('[2/4] Connecting to ROM bootloader...');
     const { ESPLoader, Transport } = await import('https://esm.sh/esptool-js@0.7.1');
-    const espTransport = new Transport(port, false);
-    const esploader = new ESPLoader({
-      transport: espTransport,
-      baudrate: 460800,
-      romBaudrate: 115200,
-      terminal: {
-        clean: () => {},
-        writeLine: (line) => onLog(line),
-        write: (data) => {
-          const cleaned = data.replace(/\r/g, '').trim();
-          if (cleaned) onLog(cleaned);
+    let espTransport = new Transport(port, false);
+    const makeLoader = (tr) =>
+      new ESPLoader({
+        transport: tr,
+        baudrate: 460800,
+        romBaudrate: 115200,
+        terminal: {
+          clean: () => {},
+          writeLine: (line) => onLog(line),
+          write: (data) => {
+            const cleaned = data.replace(/\r/g, '').trim();
+            if (cleaned) onLog(cleaned);
+          },
         },
-      },
-    });
+      });
+    let esploader = makeLoader(espTransport);
 
     let chip = '';
     try {
@@ -1102,7 +1245,16 @@ export async function js_flash_firmware(
     } catch {
       onLog('Default reset sync timed out; retrying direct no_reset sync...');
       try { await espTransport.disconnect(); } catch {}
-      await new Promise((r) => setTimeout(r, 150));
+      await new Promise((r) => setTimeout(r, 300));
+      if (useWebUsb && navigator.usb) {
+        const fresh = await waitForFreshUsbDevice(savedUsbVid, savedUsbPid, savedUsbSerial, 2000);
+        if (fresh) {
+          webUsbDevice = fresh;
+          port = new WebUsbCdcFlashPort(webUsbDevice);
+          espTransport = new Transport(port, false);
+          esploader = makeLoader(espTransport);
+        }
+      }
       chip = await esploader.main('no_reset');
     }
     onLog(`Connected to bootloader chip: ${chip || profile.label}`);
@@ -1157,12 +1309,16 @@ export async function js_flash_firmware(
 
     onProgress(100);
     onLog('Flash complete! Reconnecting to HotWire...');
-    await new Promise((r) => setTimeout(r, 1200));
+    await new Promise((r) => setTimeout(r, 1400));
     state.flashing = false;
     state.manualDisconnect = false;
     if (webUsbDevice) {
+      // ESP32 watchdog reset re-enumerates USB on Android, invalidating the old USBDevice object.
+      const fresh =
+        (await waitForFreshUsbDevice(savedUsbVid, savedUsbPid, savedUsbSerial, 3500)) ||
+        webUsbDevice;
       try {
-        await openWebUsb(webUsbDevice, state.cfg, 0);
+        await openWebUsb(fresh, state.cfg, 0);
       } catch {
         scheduleAutoReconnect(null, 800);
       }
