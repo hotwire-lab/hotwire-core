@@ -31,6 +31,18 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  text-decoration: none;
+  color: inherit;
+  border-radius: 8px;
+  transition: opacity 0.12s;
+}
+
+.hw-brand-cluster:hover {
+  opacity: 0.9;
+}
+
+.hw-brand-cluster:hover .hw-brand-logo {
+  border-color: #4b5d7a;
 }
 
 .hw-brand-logo {

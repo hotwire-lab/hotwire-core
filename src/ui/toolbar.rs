@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::protocol::{BoardIdentity, ToolId};
+use crate::protocol::{BoardIdentity, ToolId, HOTWIRE_HOME_URL};
 use crate::transport::{ConnectionStatus, TransportKind, TransportSnapshot};
 
 /// Shared HotWire top toolbar with tool switcher (`Logic / Scope / SDR / Serial`),
@@ -85,7 +85,11 @@ pub fn HotWireToolbar(
     view! {
         <header class="hw-toolbar">
             <div class="hw-toolbar-row">
-                <div class="hw-brand-cluster">
+                <a
+                    class="hw-brand-cluster"
+                    href=HOTWIRE_HOME_URL
+                    title="HotWire Lab Home"
+                >
                     <div class="hw-brand-logo" aria-hidden="true">
                         <svg viewBox="0 0 24 24" width="20" height="20">
                             <path
@@ -101,7 +105,7 @@ pub fn HotWireToolbar(
                         <span class="hw-brand-title">{active_tool.label()}</span>
                         <span class="hw-brand-badge">{move || subtitle.get()}</span>
                     </div>
-                </div>
+                </a>
 
                 <nav class="hw-tool-switcher" aria-label="HotWire Tools">
                     {ToolId::ALL

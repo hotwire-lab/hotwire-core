@@ -10,6 +10,7 @@ pub use framing::{
 };
 pub use handshake::{
     BoardChip, BoardIdentity, FirmwareMismatch, FirmwareMismatchKind, FirmwareVersion, ToolId,
+    HOTWIRE_HOME_URL,
 };
 
 pub const PROTOCOL_SYNC_0: u8 = 0xaa;

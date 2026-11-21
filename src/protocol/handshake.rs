@@ -50,6 +50,9 @@ impl fmt::Display for FirmwareVersion {
     }
 }
 
+/// Canonical landing page URL for the HotWire Lab web suite.
+pub const HOTWIRE_HOME_URL: &str = "https://hotwire-lab.github.io/";
+
 /// Identifies one of the four HotWire browser tools.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ToolId {
@@ -96,10 +99,10 @@ impl ToolId {
 
     pub const fn live_url(self) -> &'static str {
         match self {
-            ToolId::LogicAnalyzer => "https://kavierim.github.io/HotWire-Logic-Analyzer/",
-            ToolId::Oscilloscope => "https://kavierim.github.io/HotWire-Oscilloscope/",
-            ToolId::Sdr => "https://kavierim.github.io/HotWire-SDR/",
-            ToolId::SerialTerminal => "https://kavierim.github.io/HotWire-Serial-Terminal/",
+            ToolId::LogicAnalyzer => "https://hotwire-lab.github.io/logic/",
+            ToolId::Oscilloscope => "https://hotwire-lab.github.io/scope/",
+            ToolId::Sdr => "https://hotwire-lab.github.io/sdr/",
+            ToolId::SerialTerminal => "https://hotwire-lab.github.io/serial/",
         }
     }
 

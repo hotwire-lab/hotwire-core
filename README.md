@@ -1,15 +1,16 @@
 # `hotwire-core`
 
-[![CI](https://github.com/kavierim/hotwire-core/actions/workflows/ci.yml/badge.svg)](https://github.com/kavierim/hotwire-core/actions/workflows/ci.yml)
+[![CI](https://github.com/hotwire-lab/hotwire-core/actions/workflows/ci.yml/badge.svg)](https://github.com/hotwire-lab/hotwire-core/actions/workflows/ci.yml)
+[![HotWire Lab](https://img.shields.io/badge/Website-hotwire--lab.github.io-0ea5e9)](https://hotwire-lab.github.io/)
 [![Rust + WASM](https://img.shields.io/badge/Stack-Rust_%2B_Leptos_0.7_WASM-f97316?logo=rust&logoColor=white)](https://leptos.dev/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-38bdf8)](LICENSE)
 
-Shared Rust/WebAssembly foundation (`v0.2.1`) for the four HotWire browser hardware tools:
+Shared Rust/WebAssembly foundation (`v0.3.0`) for the four **[HotWire Lab](https://hotwire-lab.github.io/)** browser hardware tools:
 
-* **[HotWire Logic Analyzer](https://github.com/kavierim/HotWire-Logic-Analyzer)** ([Live](https://kavierim.github.io/HotWire-Logic-Analyzer/)) — `v1.2.0+`
-* **[HotWire Oscilloscope](https://github.com/kavierim/HotWire-Oscilloscope)** ([Live](https://kavierim.github.io/HotWire-Oscilloscope/)) — `v1.0.0+`
-* **[HotWire SDR](https://github.com/kavierim/HotWire-SDR)** ([Live](https://kavierim.github.io/HotWire-SDR/)) — `v2.0.0+`
-* **[HotWire Serial Terminal](https://github.com/kavierim/HotWire-Serial-Terminal)** ([Live](https://kavierim.github.io/HotWire-Serial-Terminal/)) — `v1.0.0+` (XIAO UART Bridge mode)
+* **[HotWire Logic Analyzer](https://github.com/hotwire-lab/logic)** ([Live](https://hotwire-lab.github.io/logic/)) — `v1.2.0+`
+* **[HotWire Oscilloscope](https://github.com/hotwire-lab/scope)** ([Live](https://hotwire-lab.github.io/scope/)) — `v1.0.0+`
+* **[HotWire SDR](https://github.com/hotwire-lab/sdr)** ([Live](https://hotwire-lab.github.io/sdr/)) — `v2.0.0+`
+* **[HotWire Serial Terminal](https://github.com/hotwire-lab/serial)** ([Live](https://hotwire-lab.github.io/serial/)) — `v1.0.0+` (XIAO UART Bridge mode)
 
 `hotwire-core` encapsulates hardware connectivity, the browser JS bridge, binary framing & firmware verification, `esptool-js` Web Flashing, and the common Leptos UI shell so each tool repository focuses purely on signal processing and visualization.
 
@@ -26,7 +27,7 @@ Shared Rust/WebAssembly foundation (`v0.2.1`) for the four HotWire browser hardw
    * `esptool-js` browser flasher [`FirmwareProfile`](src/flasher/mod.rs) presets for `XIAO ESP32-S3` and `XIAO ESP32-C6` and reusable Leptos [`FlasherPanel`](src/flasher/modal.rs) component with automatic board selection and custom `.bin` flashing.
 4. **`ui`** ([`src/ui/`](src/ui/) + [`styles/core.css`](styles/core.css))
    * Shared dark theme CSS ([`HotWireTheme`](src/ui/mod.rs)).
-   * Slottable top toolbar with `Logic / Scope / SDR / Serial` tool switcher and firmware status pill ([`HotWireToolbar`](src/ui/toolbar.rs)).
+   * Slottable top toolbar with home link (`hotwire-lab.github.io`), `Logic / Scope / SDR / Serial` tool switcher, and firmware status pill ([`HotWireToolbar`](src/ui/toolbar.rs)).
    * Automatic [`FirmwareMismatchModal`](src/ui/mismatch_modal.rs) pop-up offering one-click jump to the Web Flasher or the matching HotWire tool.
    * Swipe-to-dismiss mobile [`BottomSheet`](src/ui/bottom_sheet.rs) and pure-Rust [`PinchPanTracker`](src/ui/gestures.rs) + cursor-anchored zoom/pan math helpers.
 
@@ -35,13 +36,13 @@ Shared Rust/WebAssembly foundation (`v0.2.1`) for the four HotWire browser hardw
 ```toml
 [dependencies]
 # Pinned GitHub release tag (used in CI / GitHub Pages builds):
-hotwire-core = { git = "https://github.com/kavierim/hotwire-core", tag = "v0.2.1" }
+hotwire-core = { git = "https://github.com/hotwire-lab/hotwire-core", tag = "v0.3.0" }
 ```
 
 For local multi-repo development, temporarily add a Cargo patch in `.cargo/config.toml`:
 
 ```toml
-[patch."https://github.com/kavierim/hotwire-core"]
+[patch."https://github.com/hotwire-lab/hotwire-core"]
 hotwire-core = { path = "../hotwire-core" }
 ```
 
