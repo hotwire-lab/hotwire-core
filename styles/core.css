@@ -388,6 +388,16 @@
   background: var(--surface-2);
 }
 
+.hw-btn-feedback {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  padding: 5px 8px;
+  font-family: var(--font-mono);
+}
+
 /* Mobile-friendly Bottom Sheet */
 .hw-sheet-backdrop {
   position: fixed;

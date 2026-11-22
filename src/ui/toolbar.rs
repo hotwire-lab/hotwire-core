@@ -3,6 +3,135 @@ use leptos::prelude::*;
 use crate::protocol::{BoardIdentity, ToolId, HOTWIRE_HOME_URL};
 use crate::transport::{ConnectionStatus, TransportKind, TransportSnapshot};
 
+fn percent_encode_query(input: &str) -> String {
+    let mut out = String::with_capacity(input.len() + 16);
+    for b in input.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            b' ' => out.push('+'),
+            _ => {
+                use std::fmt::Write;
+                let _ = write!(out, "%{b:02X}");
+            }
+        }
+    }
+    out
+}
+
+fn extract_ua_version<'a>(ua: &'a str, marker: &str) -> Option<&'a str> {
+    let rest = ua.split(marker).nth(1)?;
+    let ver = rest.split(|c: char| c.is_whitespace() || c == ';').next()?;
+    ver.split('.').next().filter(|v| !v.is_empty())
+}
+
+/// Condenses a browser User-Agent string into a concise `Browser Version · OS` label
+/// suitable for pre-filling the GitHub Bug Report `env` field.
+pub fn summarize_user_agent(ua: &str) -> String {
+    let browser = if let Some(v) = extract_ua_version(ua, "EdgA/")
+        .or_else(|| extract_ua_version(ua, "Edg/"))
+    {
+        format!("Edge {v}")
+    } else if let Some(v) = extract_ua_version(ua, "OPR/") {
+        format!("Opera {v}")
+    } else if let Some(v) = extract_ua_version(ua, "Chrome/") {
+        format!("Chrome {v}")
+    } else if let Some(v) = extract_ua_version(ua, "Firefox/") {
+        format!("Firefox {v}")
+    } else if ua.contains("Safari/") && !ua.contains("Chrome/") {
+        extract_ua_version(ua, "Version/")
+            .map(|v| format!("Safari {v}"))
+            .unwrap_or_else(|| "Safari".to_string())
+    } else {
+        String::new()
+    };
+
+    let os = if ua.contains("Android") {
+        "Android"
+    } else if ua.contains("iPhone") || ua.contains("iPad") {
+        "iOS"
+    } else if ua.contains("Windows") {
+        "Windows"
+    } else if ua.contains("Macintosh") || ua.contains("Mac OS X") {
+        "macOS"
+    } else if ua.contains("CrOS") {
+        "ChromeOS"
+    } else if ua.contains("Linux") {
+        "Linux"
+    } else {
+        ""
+    };
+
+    match (browser.is_empty(), os.is_empty()) {
+        (false, false) => format!("{browser} on {os}"),
+        (false, true) => browser,
+        (true, false) => os.to_string(),
+        (true, true) => ua.chars().take(80).collect(),
+    }
+}
+
+/// Builds a GitHub `bug_report.yml` URL pre-filled with the active tool, detected board,
+/// firmware/transport metadata, and browser/OS summary.
+pub fn build_bug_report_url(
+    active_tool: ToolId,
+    transport: &TransportSnapshot,
+    identity: Option<&BoardIdentity>,
+    user_agent: &str,
+) -> String {
+    let mut url = format!(
+        "{}/issues/new?template=bug_report.yml&tool={}",
+        active_tool.repo_url(),
+        percent_encode_query(active_tool.issue_tool_option()),
+    );
+
+    if transport.transport == TransportKind::Demo {
+        url.push_str("&board=");
+        url.push_str(&percent_encode_query("Offline Demo mode (no hardware)"));
+    } else if let Some(id) = identity {
+        url.push_str("&board=");
+        url.push_str(&percent_encode_query(id.chip.issue_board_option()));
+    }
+
+    let transport_label = match transport.transport {
+        TransportKind::WebSerial => "Web Serial",
+        TransportKind::WebUsb => "WebUSB",
+        TransportKind::Demo => "Demo mode",
+        TransportKind::None => "",
+    };
+
+    let fw_summary = match (identity, transport_label) {
+        (Some(id), t) if !id.firmware.is_empty() && !t.is_empty() => {
+            format!("{} ({t})", id.firmware)
+        }
+        (Some(id), _) if !id.firmware.is_empty() => id.firmware.clone(),
+        (None, t) if !t.is_empty() && !transport.vid_pid.is_empty() => {
+            format!("{t} ({})", transport.vid_pid)
+        }
+        (None, t) if !t.is_empty() => t.to_string(),
+        _ => String::new(),
+    };
+
+    if !fw_summary.is_empty() {
+        url.push_str("&firmware=");
+        url.push_str(&percent_encode_query(&fw_summary));
+    }
+
+    let env = summarize_user_agent(user_agent);
+    if !env.is_empty() {
+        url.push_str("&env=");
+        url.push_str(&percent_encode_query(&env));
+    }
+
+    url
+}
+
+fn current_user_agent() -> String {
+    web_sys::window()
+        .and_then(|w| w.navigator().user_agent().ok())
+        .unwrap_or_default()
+}
+
 /// Shared HotWire top toolbar with tool switcher (`Logic / Scope / SDR / Serial`),
 /// live connection & firmware-mismatch pill, app-specific action slot, and
 /// Connect / Disconnect / Demo / Flasher controls.
@@ -82,6 +211,12 @@ pub fn HotWireToolbar(
 
     let mobile_menu_open = RwSignal::new(false);
     let accent = active_tool.accent_color();
+    let user_agent = StoredValue::new(current_user_agent());
+    let issue_url = move || {
+        let t = transport.get();
+        let id = identity.and_then(|s| s.get());
+        user_agent.with_value(|ua| build_bug_report_url(active_tool, &t, id.as_ref(), ua))
+    };
 
     view! {
         <header class=move || {
@@ -240,6 +375,19 @@ pub fn HotWireToolbar(
                         >
                             {move || if is_mismatch() { "⚡ Switch FW" } else { "⚡ Flasher" }}
                         </button>
+
+                        <a
+                            class="hw-btn hw-btn-ghost hw-btn-feedback"
+                            href=issue_url
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Report a bug or request a feature on GitHub (pre-fills board & browser info)"
+                            aria-label="Report issue or feedback"
+                            on:click=move |_| mobile_menu_open.set(false)
+                        >
+                            <span aria-hidden="true">"?"</span>
+                            <span class="hw-mobile-only">" Feedback"</span>
+                        </a>
                     </div>
                 </div>
 
@@ -276,5 +424,58 @@ pub fn HotWireToolbar(
                     .map(|err| view! { <div class="hw-toolbar-error" role="alert">{err}</div> })
             }}
         </header>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::BoardChip;
+
+    #[test]
+    fn summarizes_common_desktop_and_mobile_user_agents() {
+        assert_eq!(
+            summarize_user_agent(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
+            ),
+            "Edge 131 on Windows"
+        );
+        assert_eq!(
+            summarize_user_agent(
+                "Mozilla/5.0 (Linux; Android 15; Pixel 8) AppleWebKit/537.36 Chrome/132.0.0.0 Mobile Safari/537.36"
+            ),
+            "Chrome 132 on Android"
+        );
+    }
+
+    #[test]
+    fn builds_prefilled_bug_report_url_for_usb_and_demo() {
+        let mut t = TransportSnapshot::default();
+        t.transport = TransportKind::WebUsb;
+        let id = BoardIdentity {
+            board: "XIAO ESP32-S3".to_string(),
+            chip: BoardChip::Esp32S3,
+            firmware: "v1.2.0".to_string(),
+            version: None,
+            detected_tool: Some(ToolId::LogicAnalyzer),
+            raw: serde_json::Value::Null,
+        };
+        let url = build_bug_report_url(
+            ToolId::LogicAnalyzer,
+            &t,
+            Some(&id),
+            "Mozilla/5.0 (Linux; Android 15) Chrome/132.0.0.0",
+        );
+        assert!(url.starts_with("https://github.com/hotwire-lab/logic/issues/new?template=bug_report.yml"));
+        assert!(url.contains("&tool=Logic+Analyzer"));
+        assert!(url.contains("&board=Seeed+Studio+XIAO+ESP32-S3"));
+        assert!(url.contains("&firmware=v1.2.0+%28WebUSB%29"));
+        assert!(url.contains("&env=Chrome+132+on+Android"));
+
+        let mut demo = TransportSnapshot::default();
+        demo.transport = TransportKind::Demo;
+        let demo_url = build_bug_report_url(ToolId::Sdr, &demo, None, "");
+        assert!(demo_url.starts_with("https://github.com/hotwire-lab/sdr/issues/new?template=bug_report.yml"));
+        assert!(demo_url.contains("&board=Offline+Demo+mode+%28no+hardware%29"));
     }
 }

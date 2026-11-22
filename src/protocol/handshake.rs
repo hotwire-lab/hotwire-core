@@ -106,6 +106,25 @@ impl ToolId {
         }
     }
 
+    pub const fn repo_url(self) -> &'static str {
+        match self {
+            ToolId::LogicAnalyzer => "https://github.com/hotwire-lab/logic",
+            ToolId::Oscilloscope => "https://github.com/hotwire-lab/scope",
+            ToolId::Sdr => "https://github.com/hotwire-lab/sdr",
+            ToolId::SerialTerminal => "https://github.com/hotwire-lab/serial",
+        }
+    }
+
+    /// Exact dropdown label matching `.github/ISSUE_TEMPLATE/bug_report.yml`.
+    pub const fn issue_tool_option(self) -> &'static str {
+        match self {
+            ToolId::LogicAnalyzer => "Logic Analyzer",
+            ToolId::Oscilloscope => "Oscilloscope",
+            ToolId::Sdr => "SDR",
+            ToolId::SerialTerminal => "Serial Terminal",
+        }
+    }
+
     pub const fn accent_color(self) -> &'static str {
         match self {
             ToolId::LogicAnalyzer => "#58a6ff",
@@ -159,6 +178,15 @@ impl BoardChip {
             BoardChip::Esp32S3 => "XIAO ESP32-S3",
             BoardChip::Esp32C6 => "XIAO ESP32-C6",
             BoardChip::Unknown => "Unknown ESP32",
+        }
+    }
+
+    /// Exact dropdown label matching `.github/ISSUE_TEMPLATE/bug_report.yml`.
+    pub const fn issue_board_option(self) -> &'static str {
+        match self {
+            BoardChip::Esp32S3 => "Seeed Studio XIAO ESP32-S3",
+            BoardChip::Esp32C6 => "Seeed Studio XIAO ESP32-C6",
+            BoardChip::Unknown => "Other ESP32 / USB-UART adapter",
         }
     }
 }
