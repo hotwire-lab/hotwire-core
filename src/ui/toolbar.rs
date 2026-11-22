@@ -126,6 +126,15 @@ pub fn build_bug_report_url(
     url
 }
 
+/// Builds a GitHub `feature_request.yml` URL pre-filled with the active tool.
+pub fn build_feature_request_url(active_tool: ToolId) -> String {
+    format!(
+        "{}/issues/new?template=feature_request.yml&tool={}",
+        active_tool.repo_url(),
+        percent_encode_query(active_tool.issue_tool_option()),
+    )
+}
+
 fn current_user_agent() -> String {
     web_sys::window()
         .and_then(|w| w.navigator().user_agent().ok())
@@ -210,12 +219,42 @@ pub fn HotWireToolbar(
     };
 
     let mobile_menu_open = RwSignal::new(false);
+    let about_open = RwSignal::new(false);
     let accent = active_tool.accent_color();
     let user_agent = StoredValue::new(current_user_agent());
+    let browser_summary = user_agent.with_value(|ua| {
+        let s = summarize_user_agent(ua);
+        if s.is_empty() {
+            "Unknown browser".to_string()
+        } else {
+            s
+        }
+    });
     let issue_url = move || {
         let t = transport.get();
         let id = identity.and_then(|s| s.get());
         user_agent.with_value(|ua| build_bug_report_url(active_tool, &t, id.as_ref(), ua))
+    };
+    let feature_url = build_feature_request_url(active_tool);
+    let board_diag = move || {
+        let t = transport.get();
+        let transport_label = match t.transport {
+            TransportKind::WebSerial => "Web Serial",
+            TransportKind::WebUsb => "WebUSB",
+            TransportKind::Demo => "Demo mode",
+            TransportKind::None => "Disconnected",
+        };
+        if let Some(id) = identity.and_then(|s| s.get()) {
+            if !id.firmware.is_empty() {
+                format!("{} · {} ({transport_label})", id.board, id.firmware)
+            } else {
+                format!("{} ({transport_label})", id.board)
+            }
+        } else if !t.vid_pid.is_empty() {
+            format!("{transport_label} ({})", t.vid_pid)
+        } else {
+            transport_label.to_string()
+        }
     };
 
     view! {
@@ -376,18 +415,19 @@ pub fn HotWireToolbar(
                             {move || if is_mismatch() { "⚡ Switch FW" } else { "⚡ Flasher" }}
                         </button>
 
-                        <a
+                        <button
+                            type="button"
                             class="hw-btn hw-btn-ghost hw-btn-feedback"
-                            href=issue_url
-                            target="_blank"
-                            rel="noreferrer"
-                            title="Report a bug or request a feature on GitHub (pre-fills board & browser info)"
-                            aria-label="Report issue or feedback"
-                            on:click=move |_| mobile_menu_open.set(false)
+                            title="About, diagnostics, bug reports & feature requests"
+                            aria-label="About and help"
+                            on:click=move |_| {
+                                mobile_menu_open.set(false);
+                                about_open.set(true);
+                            }
                         >
                             <span aria-hidden="true">"?"</span>
-                            <span class="hw-mobile-only">" Feedback"</span>
-                        </a>
+                            <span class="hw-mobile-only">" About"</span>
+                        </button>
                     </div>
                 </div>
 
@@ -424,6 +464,131 @@ pub fn HotWireToolbar(
                     .map(|err| view! { <div class="hw-toolbar-error" role="alert">{err}</div> })
             }}
         </header>
+
+        <Show when=move || about_open.get()>
+            <div
+                class="hw-modal-backdrop"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="hw-about-title"
+                on:click=move |_| about_open.set(false)
+            >
+                <div class="hw-modal hw-about-modal" on:click=move |ev| ev.stop_propagation()>
+                    <div class="hw-about-header">
+                        <div class="hw-brand-logo" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" width="18" height="18">
+                                <path
+                                    d="M2 12 C5 4, 8 4, 11 12 C14 20, 17 20, 20 12 L22 12"
+                                    fill="none"
+                                    stroke=accent
+                                    stroke-width="2.2"
+                                    stroke-linecap="round"
+                                />
+                            </svg>
+                        </div>
+                        <div class="hw-about-heading">
+                            <h2 id="hw-about-title" class="hw-about-title">
+                                {active_tool.label()}
+                            </h2>
+                            <span class="hw-about-version">
+                                {format!("HotWire Lab · hotwire-core v{}", env!("CARGO_PKG_VERSION"))}
+                            </span>
+                        </div>
+                        <button
+                            type="button"
+                            class="hw-btn hw-btn-ghost hw-btn-sm"
+                            aria-label="Close about dialog"
+                            on:click=move |_| about_open.set(false)
+                        >
+                            "✕"
+                        </button>
+                    </div>
+
+                    <div class="hw-modal-body">
+                        <p class="hw-modal-summary">
+                            "Zero-install Rust/WASM USB bench instrument for Seeed Studio XIAO ESP32-S3 and ESP32-C6 via Web Serial & WebUSB."
+                        </p>
+
+                        <div class="hw-modal-meta">
+                            <div class="hw-modal-row">
+                                <span class="hw-modal-key">"Instrument"</span>
+                                <span class="hw-modal-val">{active_tool.issue_tool_option()}</span>
+                            </div>
+                            <div class="hw-modal-row">
+                                <span class="hw-modal-key">"Board / FW"</span>
+                                <span class="hw-modal-val">{board_diag}</span>
+                            </div>
+                            <div class="hw-modal-row">
+                                <span class="hw-modal-key">"Browser"</span>
+                                <span class="hw-modal-val">{browser_summary.clone()}</span>
+                            </div>
+                            <div class="hw-modal-row">
+                                <span class="hw-modal-key">"Core"</span>
+                                <span class="hw-modal-val">{format!("v{}", env!("CARGO_PKG_VERSION"))}</span>
+                            </div>
+                        </div>
+
+                        <div class="hw-about-links">
+                            <a
+                                class="hw-btn hw-about-link"
+                                href=issue_url
+                                target="_blank"
+                                rel="noreferrer"
+                            >
+                                "Report Issue ↗"
+                            </a>
+                            <a
+                                class="hw-btn hw-about-link"
+                                href=feature_url.clone()
+                                target="_blank"
+                                rel="noreferrer"
+                            >
+                                "Request Feature ↗"
+                            </a>
+                            <a
+                                class="hw-btn hw-about-link"
+                                href=HOTWIRE_HOME_URL
+                                target="_blank"
+                                rel="noreferrer"
+                            >
+                                "HotWire Lab Web ↗"
+                            </a>
+                            <a
+                                class="hw-btn hw-about-link"
+                                href=active_tool.repo_url()
+                                target="_blank"
+                                rel="noreferrer"
+                            >
+                                "Source & FW ↗"
+                            </a>
+                        </div>
+
+                        <p class="hw-about-credit">
+                            "Created by Kari Vierimaa, Kempele · Open Source (Apache-2.0 / GPL-3.0 SDR FW). "
+                            <a
+                                class="hw-about-inline-link"
+                                href="https://hotwire-lab.github.io/#get-hardware"
+                                target="_blank"
+                                rel="noreferrer"
+                            >
+                                "Get XIAO Hardware ↗"
+                            </a>
+                        </p>
+                    </div>
+
+                    <div class="hw-modal-actions hw-about-actions">
+                        <span class="hw-about-hint">"Bug reports auto-fill board, FW & browser."</span>
+                        <button
+                            type="button"
+                            class="hw-btn hw-btn-primary"
+                            on:click=move |_| about_open.set(false)
+                        >
+                            "Close"
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Show>
     }
 }
 
@@ -477,5 +642,11 @@ mod tests {
         let demo_url = build_bug_report_url(ToolId::Sdr, &demo, None, "");
         assert!(demo_url.starts_with("https://github.com/hotwire-lab/sdr/issues/new?template=bug_report.yml"));
         assert!(demo_url.contains("&board=Offline+Demo+mode+%28no+hardware%29"));
+
+        let feat_url = build_feature_request_url(ToolId::Oscilloscope);
+        assert_eq!(
+            feat_url,
+            "https://github.com/hotwire-lab/scope/issues/new?template=feature_request.yml&tool=Oscilloscope"
+        );
     }
 }

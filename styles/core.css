@@ -681,6 +681,87 @@
   background: #0e1217;
 }
 
+/* About / Help Modal */
+.hw-about-modal {
+  border-color: var(--border-strong);
+}
+
+.hw-about-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: #0e1217;
+  border-bottom: 1px solid var(--border);
+}
+
+.hw-about-heading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hw-about-title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.hw-about-version {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.hw-about-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.hw-about-link {
+  text-decoration: none;
+  justify-content: center;
+  text-align: center;
+  min-height: 36px;
+}
+
+.hw-about-credit {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.hw-about-inline-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.hw-about-inline-link:hover {
+  text-decoration: underline;
+}
+
+.hw-about-actions {
+  justify-content: space-between;
+}
+
+.hw-about-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+@media (max-width: 440px) {
+  .hw-about-links {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Comfortable Touch Targets on Coarse Pointers */
 @media (pointer: coarse) {
   .hw-btn,
