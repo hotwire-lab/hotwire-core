@@ -21,6 +21,8 @@
 
 /* Shared Top Toolbar */
 .hw-toolbar {
+  position: relative;
+  z-index: 50;
   background: #0e1217;
   border-bottom: 1px solid var(--border);
   padding: max(6px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 6px max(12px, env(safe-area-inset-left));
@@ -34,14 +36,8 @@
   flex-wrap: wrap;
 }
 
-.hw-toolbar-top {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
 .hw-brand-cluster {
+  order: 1;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -96,6 +92,7 @@
 
 /* Tool Switcher (Logic / Scope / SDR / Serial) */
 .hw-tool-switcher {
+  order: 2;
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -151,6 +148,7 @@
 
 /* Status Pill */
 .hw-status-pill {
+  order: 3;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -206,14 +204,64 @@
 
 .hw-spacer,
 .control-spacer {
+  order: 4;
   flex: 1;
 }
 
-.hw-toolbar-actions {
-  display: flex;
+.hw-app-slot {
+  order: 5;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.hw-app-slot:empty {
+  display: none;
+}
+
+.hw-mobile-drawer {
+  display: contents;
+}
+
+.hw-conn-actions {
+  order: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.hw-btn.hw-mobile-menu-btn {
+  display: none;
+  position: relative;
+  z-index: 55;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.hw-mobile-menu-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.hw-menu-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(240, 180, 41, 0.8);
+  pointer-events: none;
+}
+
+.hw-menu-backdrop {
+  display: none;
 }
 
 .hw-toolbar-error {
@@ -633,56 +681,137 @@
   }
 }
 
-/* Responsive: Tablet & Mobile (2 compact rows max) */
+/* Shared Responsive Visibility Utilities */
+@media (min-width: 720.02px) {
+  .hw-mobile-only {
+    display: none !important;
+  }
+}
+
+/* Responsive: Tablet & Mobile (strictly 1 compact horizontal row ~44-48px) */
 @media (max-width: 720px) {
+  .hw-desktop-only {
+    display: none !important;
+  }
+
   .hw-toolbar {
-    padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 6px max(8px, env(safe-area-inset-left));
+    padding: max(4px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 4px max(8px, env(safe-area-inset-left));
   }
 
   .hw-toolbar-row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
-  }
-
-  .hw-toolbar-top {
-    width: 100%;
-    gap: 6px;
+    flex-direction: row;
+    align-items: center;
     flex-wrap: nowrap;
+    gap: 6px;
+    min-height: 36px;
   }
 
-  .hw-brand-badge,
+  .hw-brand-cluster {
+    order: 1;
+  }
+
+  .hw-brand-text,
   .hw-status-vidpid,
   .hw-spacer {
     display: none;
   }
 
-  .hw-tool-switcher {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-
   .hw-status-pill {
+    order: 2;
     flex: 0 1 auto;
-    max-width: 40%;
-    padding: 4px 8px;
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 3px 7px;
+    font-size: 11px;
+    gap: 5px;
   }
 
-  .hw-toolbar-actions {
-    width: 100%;
+  .hw-app-slot {
+    order: 3;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 5px;
+    min-width: 0;
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
-    gap: 6px;
   }
 
-  .hw-toolbar-actions::-webkit-scrollbar {
+  .hw-app-slot::-webkit-scrollbar {
     display: none;
   }
 
-  .hw-toolbar-actions > * {
+  .hw-app-slot > * {
     flex-shrink: 0;
+  }
+
+  .hw-btn.hw-mobile-menu-btn {
+    order: 4;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    min-height: 36px;
+    margin-left: auto;
+  }
+
+  .hw-menu-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 51;
+    background: transparent;
+  }
+
+  .hw-mobile-drawer {
+    display: none;
+  }
+
+  .hw-toolbar.hw-menu-open .hw-mobile-drawer {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 55;
+    background: #0e1217;
+    border-bottom: 1px solid var(--border-strong);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6);
+  }
+
+  .hw-mobile-drawer .hw-tool-switcher {
+    order: 0;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    box-sizing: border-box;
+  }
+
+  .hw-mobile-drawer .hw-tool-tab {
+    justify-content: center;
+    padding: 6px 4px;
+    min-height: 36px;
+  }
+
+  .hw-mobile-drawer .hw-conn-actions {
+    order: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .hw-mobile-drawer .hw-conn-actions .hw-btn {
+    flex: 1 1 auto;
+    min-height: 36px;
   }
 
   .hw-btn,
@@ -690,10 +819,6 @@
   .hw-select,
   .hw-tool-tab {
     min-height: 36px;
-  }
-
-  .hw-tool-tab {
-    padding: 4px 7px;
   }
 }
 
@@ -706,38 +831,31 @@
   }
 }
 
-/* Responsive: Narrow Phones (hide redundant brand title since active tool is shown in switcher) */
-@media (max-width: 560px) {
-  .hw-brand-text {
-    display: none;
-  }
-}
-
 @media (max-width: 480px) {
   .hw-toolbar {
-    padding: max(5px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) 5px max(6px, env(safe-area-inset-left));
+    padding: max(4px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) 4px max(6px, env(safe-area-inset-left));
   }
 
-  .hw-toolbar-top {
+  .hw-toolbar-row {
     gap: 5px;
   }
 
   .hw-tool-tab {
-    padding: 4px 6px;
+    padding: 4px 4px;
     gap: 4px;
     font-size: 11px;
   }
 
   .hw-status-pill {
-    padding: 3px 7px;
+    padding: 3px 6px;
     font-size: 11px;
-    gap: 5px;
-    max-width: 36%;
+    gap: 4px;
+    max-width: 96px;
   }
 
   .hw-btn,
   .btn {
-    padding: 6px 10px;
+    padding: 5px 9px;
     font-size: 12px;
   }
 

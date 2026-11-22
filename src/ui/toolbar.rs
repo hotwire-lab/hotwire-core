@@ -80,34 +80,73 @@ pub fn HotWireToolbar(
         }
     };
 
+    let mobile_menu_open = RwSignal::new(false);
     let accent = active_tool.accent_color();
 
     view! {
-        <header class="hw-toolbar">
-            <div class="hw-toolbar-row">
-                <div class="hw-toolbar-top">
-                    <a
-                        class="hw-brand-cluster"
-                        href=HOTWIRE_HOME_URL
-                        title="HotWire Lab Home"
-                    >
-                        <div class="hw-brand-logo" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" width="18" height="18">
-                                <path
-                                    d="M2 12 C5 4, 8 4, 11 12 C14 20, 17 20, 20 12 L22 12"
-                                    fill="none"
-                                    stroke=accent
-                                    stroke-width="2.2"
-                                    stroke-linecap="round"
-                                />
-                            </svg>
-                        </div>
-                        <div class="hw-brand-text">
-                            <span class="hw-brand-title">{active_tool.label()}</span>
-                            <span class="hw-brand-badge">{move || subtitle.get()}</span>
-                        </div>
-                    </a>
+        <header class=move || {
+            if mobile_menu_open.get() {
+                "hw-toolbar hw-menu-open"
+            } else {
+                "hw-toolbar"
+            }
+        }>
+            {move || {
+                if mobile_menu_open.get() {
+                    Some(view! {
+                        <div
+                            class="hw-menu-backdrop"
+                            on:click=move |_| mobile_menu_open.set(false)
+                        />
+                    })
+                } else {
+                    None
+                }
+            }}
 
+            <div class="hw-toolbar-row">
+                <a
+                    class="hw-brand-cluster"
+                    href=HOTWIRE_HOME_URL
+                    title="HotWire Lab Home"
+                >
+                    <div class="hw-brand-logo" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="18" height="18">
+                            <path
+                                d="M2 12 C5 4, 8 4, 11 12 C14 20, 17 20, 20 12 L22 12"
+                                fill="none"
+                                stroke=accent
+                                stroke-width="2.2"
+                                stroke-linecap="round"
+                            />
+                        </svg>
+                    </div>
+                    <div class="hw-brand-text">
+                        <span class="hw-brand-title">{active_tool.label()}</span>
+                        <span class="hw-brand-badge">{move || subtitle.get()}</span>
+                    </div>
+                </a>
+
+                <div class=status_class title=status_title>
+                    <span class="hw-status-dot" />
+                    <span class="hw-status-label">{status_label}</span>
+                    {move || {
+                        let t = transport.get();
+                        if t.status.is_active() && !t.vid_pid.is_empty() {
+                            Some(view! { <span class="hw-status-vidpid">{t.vid_pid}</span> })
+                        } else {
+                            None
+                        }
+                    }}
+                </div>
+
+                <div class="hw-spacer" />
+
+                <div class="hw-app-slot">
+                    {children.map(|c| c())}
+                </div>
+
+                <div class="hw-mobile-drawer">
                     <nav class="hw-tool-switcher" aria-label="HotWire Tools">
                         {ToolId::ALL
                             .into_iter()
@@ -127,6 +166,7 @@ pub fn HotWireToolbar(
                                         title=tool.label()
                                         aria-current=if is_cur { Some("page") } else { None }
                                         on:click=move |ev| {
+                                            mobile_menu_open.set(false);
                                             if is_cur {
                                                 ev.prevent_default();
                                             }
@@ -140,73 +180,93 @@ pub fn HotWireToolbar(
                             .collect_view()}
                     </nav>
 
-                    <div class=status_class title=status_title>
-                        <span class="hw-status-dot" />
-                        <span class="hw-status-label">{status_label}</span>
+                    <div class="hw-conn-actions">
                         {move || {
-                            let t = transport.get();
-                            if t.status.is_active() && !t.vid_pid.is_empty() {
-                                Some(view! { <span class="hw-status-vidpid">{t.vid_pid}</span> })
+                            if is_active() {
+                                view! {
+                                    <button
+                                        class="hw-btn hw-btn-ghost"
+                                        on:click=move |_| {
+                                            mobile_menu_open.set(false);
+                                            on_disconnect.run(());
+                                        }
+                                    >
+                                        "Disconnect"
+                                    </button>
+                                }
+                                .into_any()
                             } else {
-                                None
+                                view! {
+                                    <button
+                                        class="hw-btn hw-btn-primary"
+                                        disabled=is_connecting
+                                        on:click=move |_| {
+                                            mobile_menu_open.set(false);
+                                            on_connect.run(());
+                                        }
+                                    >
+                                        {move || if is_connecting() { "Connecting..." } else { "Connect USB" }}
+                                    </button>
+                                    <button
+                                        class="hw-btn hw-btn-accent"
+                                        on:click=move |_| {
+                                            mobile_menu_open.set(false);
+                                            on_start_demo.run(());
+                                        }
+                                        title="Run offline hardware simulator (no USB required)"
+                                    >
+                                        "Demo"
+                                    </button>
+                                }
+                                .into_any()
                             }
                         }}
+
+                        <button
+                            class=move || {
+                                if is_mismatch() {
+                                    "hw-btn hw-btn-warn"
+                                } else if flasher_open.get() {
+                                    "hw-btn hw-btn-accent active"
+                                } else {
+                                    "hw-btn"
+                                }
+                            }
+                            on:click=move |_| {
+                                mobile_menu_open.set(false);
+                                on_toggle_flasher.run(());
+                            }
+                            title="Web Flasher & Pinout"
+                        >
+                            {move || if is_mismatch() { "⚡ Switch FW" } else { "⚡ Flasher" }}
+                        </button>
                     </div>
                 </div>
 
-                <div class="hw-spacer" />
-
-                <div class="hw-toolbar-actions">
-                    {children.map(|c| c())}
-
-                    {move || {
-                        if is_active() {
-                            view! {
-                                <button
-                                    class="hw-btn hw-btn-ghost"
-                                    on:click=move |_| on_disconnect.run(())
-                                >
-                                    "Disconnect"
-                                </button>
-                            }
-                            .into_any()
+                <button
+                    type="button"
+                    class=move || {
+                        if mobile_menu_open.get() {
+                            "hw-btn hw-mobile-menu-btn active"
                         } else {
-                            view! {
-                                <button
-                                    class="hw-btn hw-btn-primary"
-                                    disabled=is_connecting
-                                    on:click=move |_| on_connect.run(())
-                                >
-                                    {move || if is_connecting() { "Connecting..." } else { "Connect USB" }}
-                                </button>
-                                <button
-                                    class="hw-btn hw-btn-accent"
-                                    on:click=move |_| on_start_demo.run(())
-                                    title="Run offline hardware simulator (no USB required)"
-                                >
-                                    "Demo"
-                                </button>
-                            }
-                            .into_any()
+                            "hw-btn hw-mobile-menu-btn"
+                        }
+                    }
+                    aria-label=move || if mobile_menu_open.get() { "Close menu" } else { "Open menu" }
+                    aria-expanded=move || if mobile_menu_open.get() { "true" } else { "false" }
+                    on:click=move |_| mobile_menu_open.update(|open| *open = !*open)
+                >
+                    <span class="hw-mobile-menu-icon">
+                        {move || if mobile_menu_open.get() { "✕" } else { "☰" }}
+                    </span>
+                    {move || {
+                        if !mobile_menu_open.get() && (is_mismatch() || !is_active()) {
+                            Some(view! { <span class="hw-menu-dot" aria-hidden="true" /> })
+                        } else {
+                            None
                         }
                     }}
-
-                    <button
-                        class=move || {
-                            if is_mismatch() {
-                                "hw-btn hw-btn-warn"
-                            } else if flasher_open.get() {
-                                "hw-btn hw-btn-accent active"
-                            } else {
-                                "hw-btn"
-                            }
-                        }
-                        on:click=move |_| on_toggle_flasher.run(())
-                        title="Web Flasher & Pinout"
-                    >
-                        {move || if is_mismatch() { "⚡ Switch FW" } else { "⚡ Flasher" }}
-                    </button>
-                </div>
+                </button>
             </div>
 
             {move || {
