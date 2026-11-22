@@ -85,71 +85,73 @@ pub fn HotWireToolbar(
     view! {
         <header class="hw-toolbar">
             <div class="hw-toolbar-row">
-                <a
-                    class="hw-brand-cluster"
-                    href=HOTWIRE_HOME_URL
-                    title="HotWire Lab Home"
-                >
-                    <div class="hw-brand-logo" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" width="20" height="20">
-                            <path
-                                d="M2 12 C5 4, 8 4, 11 12 C14 20, 17 20, 20 12 L22 12"
-                                fill="none"
-                                stroke=accent
-                                stroke-width="2.2"
-                                stroke-linecap="round"
-                            />
-                        </svg>
-                    </div>
-                    <div class="hw-brand-text">
-                        <span class="hw-brand-title">{active_tool.label()}</span>
-                        <span class="hw-brand-badge">{move || subtitle.get()}</span>
-                    </div>
-                </a>
+                <div class="hw-toolbar-top">
+                    <a
+                        class="hw-brand-cluster"
+                        href=HOTWIRE_HOME_URL
+                        title="HotWire Lab Home"
+                    >
+                        <div class="hw-brand-logo" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" width="18" height="18">
+                                <path
+                                    d="M2 12 C5 4, 8 4, 11 12 C14 20, 17 20, 20 12 L22 12"
+                                    fill="none"
+                                    stroke=accent
+                                    stroke-width="2.2"
+                                    stroke-linecap="round"
+                                />
+                            </svg>
+                        </div>
+                        <div class="hw-brand-text">
+                            <span class="hw-brand-title">{active_tool.label()}</span>
+                            <span class="hw-brand-badge">{move || subtitle.get()}</span>
+                        </div>
+                    </a>
 
-                <nav class="hw-tool-switcher" aria-label="HotWire Tools">
-                    {ToolId::ALL
-                        .into_iter()
-                        .map(|tool| {
-                            let is_cur = tool == active_tool;
-                            let cls = if is_cur {
-                                "hw-tool-tab active"
-                            } else {
-                                "hw-tool-tab"
-                            };
-                            let dot_style = format!("background: {};", tool.accent_color());
-                            let href = if is_cur { "#" } else { tool.live_url() };
-                            view! {
-                                <a
-                                    class=cls
-                                    href=href
-                                    title=tool.label()
-                                    aria-current=if is_cur { Some("page") } else { None }
-                                    on:click=move |ev| {
-                                        if is_cur {
-                                            ev.prevent_default();
+                    <nav class="hw-tool-switcher" aria-label="HotWire Tools">
+                        {ToolId::ALL
+                            .into_iter()
+                            .map(|tool| {
+                                let is_cur = tool == active_tool;
+                                let cls = if is_cur {
+                                    "hw-tool-tab active"
+                                } else {
+                                    "hw-tool-tab"
+                                };
+                                let dot_style = format!("background: {};", tool.accent_color());
+                                let href = if is_cur { "#" } else { tool.live_url() };
+                                view! {
+                                    <a
+                                        class=cls
+                                        href=href
+                                        title=tool.label()
+                                        aria-current=if is_cur { Some("page") } else { None }
+                                        on:click=move |ev| {
+                                            if is_cur {
+                                                ev.prevent_default();
+                                            }
                                         }
-                                    }
-                                >
-                                    <span class="hw-tool-dot" style=dot_style />
-                                    <span>{tool.short_label()}</span>
-                                </a>
-                            }
-                        })
-                        .collect_view()}
-                </nav>
+                                    >
+                                        <span class="hw-tool-dot" style=dot_style />
+                                        <span>{tool.short_label()}</span>
+                                    </a>
+                                }
+                            })
+                            .collect_view()}
+                    </nav>
 
-                <div class=status_class title=status_title>
-                    <span class="hw-status-dot" />
-                    <span class="hw-status-label">{status_label}</span>
-                    {move || {
-                        let t = transport.get();
-                        if t.status.is_active() && !t.vid_pid.is_empty() {
-                            Some(view! { <span class="hw-status-vidpid">{t.vid_pid}</span> })
-                        } else {
-                            None
-                        }
-                    }}
+                    <div class=status_class title=status_title>
+                        <span class="hw-status-dot" />
+                        <span class="hw-status-label">{status_label}</span>
+                        {move || {
+                            let t = transport.get();
+                            if t.status.is_active() && !t.vid_pid.is_empty() {
+                                Some(view! { <span class="hw-status-vidpid">{t.vid_pid}</span> })
+                            } else {
+                                None
+                            }
+                        }}
+                    </div>
                 </div>
 
                 <div class="hw-spacer" />
