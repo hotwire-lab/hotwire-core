@@ -615,8 +615,10 @@ mod tests {
 
     #[test]
     fn builds_prefilled_bug_report_url_for_usb_and_demo() {
-        let mut t = TransportSnapshot::default();
-        t.transport = TransportKind::WebUsb;
+        let t = TransportSnapshot {
+            transport: TransportKind::WebUsb,
+            ..Default::default()
+        };
         let id = BoardIdentity {
             board: "XIAO ESP32-S3".to_string(),
             chip: BoardChip::Esp32S3,
@@ -637,8 +639,10 @@ mod tests {
         assert!(url.contains("&firmware=v1.2.0+%28WebUSB%29"));
         assert!(url.contains("&env=Chrome+132+on+Android"));
 
-        let mut demo = TransportSnapshot::default();
-        demo.transport = TransportKind::Demo;
+        let demo = TransportSnapshot {
+            transport: TransportKind::Demo,
+            ..Default::default()
+        };
         let demo_url = build_bug_report_url(ToolId::Sdr, &demo, None, "");
         assert!(demo_url.starts_with("https://github.com/hotwire-lab/sdr/issues/new?template=bug_report.yml"));
         assert!(demo_url.contains("&board=Offline+Demo+mode+%28no+hardware%29"));
