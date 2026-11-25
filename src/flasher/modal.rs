@@ -153,6 +153,7 @@ pub fn FlasherPanel(
                 <select
                     class="hw-select"
                     disabled=move || flashing.get()
+                    prop:value=move || selected_board_id.get()
                     on:change=move |ev| {
                         selected_board_id.set(event_target_value(&ev));
                     }
@@ -198,7 +199,15 @@ pub fn FlasherPanel(
                 <button
                     class="hw-btn hw-btn-ghost hw-btn-sm"
                     disabled=move || flashing.get()
-                    on:click=move |_| show_custom_bin.update(|v| *v = !*v)
+                    on:click=move |_| {
+                        let next = !show_custom_bin.get_untracked();
+                        show_custom_bin.set(next);
+                        if !next {
+                            selected_file.set_value(None);
+                            selected_file_name.set(None);
+                            flash_offset.set("full".to_string());
+                        }
+                    }
                 >
                     {move || if show_custom_bin.get() { "Hide Custom .bin" } else { "Custom .bin..." }}
                 </button>
@@ -228,6 +237,7 @@ pub fn FlasherPanel(
                             <select
                                 class="hw-select"
                                 disabled=move || flashing.get()
+                                prop:value=move || flash_offset.get()
                                 on:change=move |ev| flash_offset.set(event_target_value(&ev))
                             >
                                 <option value="full" selected=move || flash_offset.get() == "full">

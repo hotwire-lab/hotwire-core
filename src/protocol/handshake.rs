@@ -53,21 +53,23 @@ impl fmt::Display for FirmwareVersion {
 /// Canonical landing page URL for the HotWire Lab web suite.
 pub const HOTWIRE_HOME_URL: &str = "https://hotwire-lab.github.io/";
 
-/// Identifies one of the four HotWire browser tools.
+/// Identifies one of the five HotWire browser tools.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ToolId {
     LogicAnalyzer,
     Oscilloscope,
     Sdr,
     SerialTerminal,
+    SignalGenerator,
 }
 
 impl ToolId {
-    pub const ALL: [ToolId; 4] = [
+    pub const ALL: [ToolId; 5] = [
         ToolId::LogicAnalyzer,
         ToolId::Oscilloscope,
         ToolId::Sdr,
         ToolId::SerialTerminal,
+        ToolId::SignalGenerator,
     ];
 
     pub const fn slug(self) -> &'static str {
@@ -76,6 +78,7 @@ impl ToolId {
             ToolId::Oscilloscope => "scope",
             ToolId::Sdr => "sdr",
             ToolId::SerialTerminal => "serial",
+            ToolId::SignalGenerator => "siggen",
         }
     }
 
@@ -85,6 +88,7 @@ impl ToolId {
             ToolId::Oscilloscope => "HotWire Oscilloscope",
             ToolId::Sdr => "HotWire SDR",
             ToolId::SerialTerminal => "HotWire Serial Terminal",
+            ToolId::SignalGenerator => "HotWire Signal Generator",
         }
     }
 
@@ -94,6 +98,7 @@ impl ToolId {
             ToolId::Oscilloscope => "Scope",
             ToolId::Sdr => "SDR",
             ToolId::SerialTerminal => "Serial",
+            ToolId::SignalGenerator => "Gen",
         }
     }
 
@@ -103,6 +108,7 @@ impl ToolId {
             ToolId::Oscilloscope => "https://hotwire-lab.github.io/scope/",
             ToolId::Sdr => "https://hotwire-lab.github.io/sdr/",
             ToolId::SerialTerminal => "https://hotwire-lab.github.io/serial/",
+            ToolId::SignalGenerator => "https://hotwire-lab.github.io/siggen/",
         }
     }
 
@@ -112,6 +118,7 @@ impl ToolId {
             ToolId::Oscilloscope => "https://github.com/hotwire-lab/scope",
             ToolId::Sdr => "https://github.com/hotwire-lab/sdr",
             ToolId::SerialTerminal => "https://github.com/hotwire-lab/serial",
+            ToolId::SignalGenerator => "https://github.com/hotwire-lab/siggen",
         }
     }
 
@@ -122,6 +129,7 @@ impl ToolId {
             ToolId::Oscilloscope => "Oscilloscope",
             ToolId::Sdr => "SDR",
             ToolId::SerialTerminal => "Serial Terminal",
+            ToolId::SignalGenerator => "Signal Generator",
         }
     }
 
@@ -131,6 +139,7 @@ impl ToolId {
             ToolId::Oscilloscope => "#facc15",
             ToolId::Sdr => "#a855f7",
             ToolId::SerialTerminal => "#4ade80",
+            ToolId::SignalGenerator => "#fb7185",
         }
     }
 
@@ -141,6 +150,7 @@ impl ToolId {
             ToolId::Oscilloscope => FirmwareVersion::new(1, 0, 0),
             ToolId::Sdr => FirmwareVersion::new(2, 0, 0),
             ToolId::SerialTerminal => FirmwareVersion::new(1, 0, 0),
+            ToolId::SignalGenerator => FirmwareVersion::new(1, 0, 0),
         }
     }
 }
@@ -417,6 +427,9 @@ impl BoardIdentity {
 }
 
 fn infer_tool(raw: &Value, firmware: &str) -> Option<ToolId> {
+    if raw.get("siggen").and_then(Value::as_bool) == Some(true) {
+        return Some(ToolId::SignalGenerator);
+    }
     if raw.get("scope").and_then(Value::as_bool) == Some(true) {
         return Some(ToolId::Oscilloscope);
     }
@@ -434,7 +447,9 @@ fn infer_tool(raw: &Value, firmware: &str) -> Option<ToolId> {
     }
 
     let fw_lower = firmware.to_lowercase();
-    if fw_lower.contains("scope") {
+    if fw_lower.contains("siggen") {
+        Some(ToolId::SignalGenerator)
+    } else if fw_lower.contains("scope") {
         Some(ToolId::Oscilloscope)
     } else if fw_lower.contains("sdr") {
         Some(ToolId::Sdr)
@@ -498,6 +513,12 @@ mod tests {
         )
         .unwrap();
         assert!(uart.validate(ToolId::SerialTerminal).is_ok());
+
+        let siggen = BoardIdentity::decode_capabilities(
+            br#"{"board":"XIAO-ESP32-S3","firmware":"1.0.0-siggen","siggen":true,"max_channels":2}"#,
+        )
+        .unwrap();
+        assert!(siggen.validate(ToolId::SignalGenerator).is_ok());
     }
 
     #[test]

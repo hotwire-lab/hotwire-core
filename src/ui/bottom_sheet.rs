@@ -1,4 +1,5 @@
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
 
 /// Mobile-friendly draggable bottom sheet (drawer) with backdrop click-to-close
 /// and swipe-down-to-dismiss handle.
@@ -14,6 +15,12 @@ pub fn BottomSheet(
     let drag_offset_y = RwSignal::new(0.0f64);
 
     let on_drag_start = move |ev: web_sys::PointerEvent| {
+        if let Some(el) = ev
+            .current_target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+        {
+            let _ = el.set_pointer_capture(ev.pointer_id());
+        }
         dragging.set(true);
         drag_start_y.set(ev.client_y() as f64);
         drag_offset_y.set(0.0);

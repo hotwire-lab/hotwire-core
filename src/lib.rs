@@ -1,5 +1,5 @@
 //! `hotwire-core` — Shared Rust/WASM foundation for the HotWire browser hardware tool suite
-//! (Logic Analyzer, Oscilloscope, SDR, Serial Terminal).
+//! (Logic Analyzer, Oscilloscope, SDR, Serial Terminal, Signal Generator).
 //!
 //! Encapsulates:
 //! - [`protocol`]: Shared binary framing (`0xAA 0x55`), XOR/CRC checksums, streaming demuxer,
