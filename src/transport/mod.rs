@@ -364,6 +364,7 @@ mod wasm_transport {
 
         pub fn connect_usb_with_config(&self, cfg: SerialConfig) {
             self.stop_demo_timer();
+            js_set_demo_active(false);
             *self.config.borrow_mut() = cfg.clone();
             let cfg_json = serde_json::to_string(&cfg).unwrap_or_default();
             let init_cmds = self.init_cmds.borrow().clone();
@@ -421,6 +422,10 @@ mod wasm_transport {
                 cb(snap);
             }
 
+            // Cancel any real USB session/auto-reconnect attempt before the
+            // demo timer starts, otherwise USB and simulator bytes can mix.
+            js_set_demo_active(true);
+
             if !start_bytes.is_empty() {
                 if let Some(cb) = self.on_bytes.borrow_mut().as_mut() {
                     cb(&start_bytes);
@@ -455,6 +460,7 @@ mod wasm_transport {
         pub fn disconnect(&self) {
             self.stop_demo_timer();
             if self.snapshot.borrow().status == ConnectionStatus::Demo {
+                js_set_demo_active(false);
                 let next = TransportSnapshot::default();
                 *self.snapshot.borrow_mut() = next.clone();
                 if let Some(cb) = self.on_state.borrow_mut().as_mut() {
@@ -557,6 +563,7 @@ mod wasm_transport {
             FL: FnMut(String) + 'static,
             FP: FnMut(u32) + 'static,
         {
+            let was_demo = self.snapshot.borrow().status == ConnectionStatus::Demo;
             self.stop_demo_timer();
             let profile_json =
                 serde_json::to_string(profile).map_err(|e| format!("Invalid profile: {e}"))?;
@@ -578,8 +585,17 @@ mod wasm_transport {
             let res = wasm_bindgen_futures::JsFuture::from(promise).await;
             drop(log_cb);
             drop(prog_cb);
-            res.map(|_| ())
-                .map_err(|err| extract_js_error(err, "Firmware flashing failed"))
+            let result = res
+                .map(|_| ())
+                .map_err(|err| extract_js_error(err, "Firmware flashing failed"));
+            if result.is_err() && was_demo {
+                // The JS flasher failure path resets the USB state and calls
+                // notifyState(waiting), which is ignored while the Rust
+                // snapshot is Demo. Restart the simulator explicitly so Demo
+                // mode does not silently become a dead screen.
+                self.start_demo();
+            }
+            result
         }
 
         fn stop_demo_timer(&self) {

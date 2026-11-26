@@ -383,6 +383,7 @@ pub fn HotWireToolbar(
                                     </button>
                                     <button
                                         class="hw-btn hw-btn-accent"
+                                        disabled=is_connecting
                                         on:click=move |_| {
                                             mobile_menu_open.set(false);
                                             on_start_demo.run(());

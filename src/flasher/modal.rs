@@ -105,6 +105,11 @@ pub fn FlasherPanel(
 
         let offset = flash_offset.get_untracked();
         let custom = selected_file.get_value();
+        let offset = if custom.is_some() && offset == "full" {
+            "0x10000".to_string()
+        } else {
+            offset
+        };
         let tr = transport.get_value();
 
         spawn_local(async move {
@@ -231,6 +236,8 @@ pub fn FlasherPanel(
                                     selected_file.set_value(file);
                                     if selected_file_name.get_untracked().is_some() {
                                         flash_offset.set("0x10000".to_string());
+                                    } else {
+                                        flash_offset.set("full".to_string());
                                     }
                                 }
                             />
@@ -240,9 +247,17 @@ pub fn FlasherPanel(
                                 prop:value=move || flash_offset.get()
                                 on:change=move |ev| flash_offset.set(event_target_value(&ev))
                             >
-                                <option value="full" selected=move || flash_offset.get() == "full">
-                                    "Full Bundled Image"
-                                </option>
+                                {move || {
+                                    if selected_file_name.get().is_none() {
+                                        Some(view! {
+                                            <option value="full" selected=move || flash_offset.get() == "full">
+                                                "Full Bundled Image"
+                                            </option>
+                                        })
+                                    } else {
+                                        None
+                                    }
+                                }}
                                 <option value="0x10000" selected=move || flash_offset.get() == "0x10000">
                                     "App @ 0x10000"
                                 </option>

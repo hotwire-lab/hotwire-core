@@ -5,7 +5,7 @@
 [![Rust + WASM](https://img.shields.io/badge/Stack-Rust_%2B_Leptos_0.7_WASM-f97316?logo=rust&logoColor=white)](https://leptos.dev/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-38bdf8)](LICENSE)
 
-Shared Rust/WebAssembly foundation (`v0.5.0`) for the five **[HotWire Lab](https://hotwire-lab.github.io/)** browser hardware tools:
+Shared Rust/WebAssembly foundation (`v0.5.1`) for the five **[HotWire Lab](https://hotwire-lab.github.io/)** browser hardware tools:
 
 * **[HotWire Logic Analyzer](https://github.com/hotwire-lab/logic)** ([Live](https://hotwire-lab.github.io/logic/)) — `v1.2.0+`
 * **[HotWire Oscilloscope](https://github.com/hotwire-lab/scope)** ([Live](https://hotwire-lab.github.io/scope/)) — `v1.0.0+`
@@ -37,7 +37,7 @@ Shared Rust/WebAssembly foundation (`v0.5.0`) for the five **[HotWire Lab](https
 ```toml
 [dependencies]
 # Pinned GitHub release tag (used in CI / GitHub Pages builds):
-hotwire-core = { git = "https://github.com/hotwire-lab/hotwire-core", tag = "v0.5.0" }
+hotwire-core = { git = "https://github.com/hotwire-lab/hotwire-core", tag = "v0.5.1" }
 ```
 
 For local multi-repo development, temporarily add a Cargo patch in `.cargo/config.toml`:

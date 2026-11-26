@@ -31,3 +31,6 @@ jobs:
         run: |
           cargo clippy --all-targets -- -D warnings
           cargo clippy --target wasm32-unknown-unknown -- -D warnings
+
+      - name: Check JavaScript bridge syntax
+        run: node --check js/web_serial_bridge.js

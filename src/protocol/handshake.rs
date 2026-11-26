@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Parsed semantic version (`major.minor.patch`) extracted from a HotWire firmware string
-/// such as `"1.2.0"`, `"1.0.0-scope-c6"`, or `"2.0.0-sdr"`.
+/// such as `"1.2.0"`, `"1.1.0-scope-c6"`, or `"2.1.0-sdr"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct FirmwareVersion {
     pub major: u16,
@@ -147,10 +147,10 @@ impl ToolId {
     pub const fn min_firmware_version(self) -> FirmwareVersion {
         match self {
             ToolId::LogicAnalyzer => FirmwareVersion::new(1, 2, 0),
-            ToolId::Oscilloscope => FirmwareVersion::new(1, 0, 0),
-            ToolId::Sdr => FirmwareVersion::new(2, 0, 0),
-            ToolId::SerialTerminal => FirmwareVersion::new(1, 0, 0),
-            ToolId::SignalGenerator => FirmwareVersion::new(1, 0, 0),
+            ToolId::Oscilloscope => FirmwareVersion::new(1, 1, 0),
+            ToolId::Sdr => FirmwareVersion::new(2, 1, 0),
+            ToolId::SerialTerminal => FirmwareVersion::new(1, 1, 0),
+            ToolId::SignalGenerator => FirmwareVersion::new(1, 1, 0),
         }
     }
 }
@@ -490,14 +490,14 @@ mod tests {
     #[test]
     fn validates_real_firmware_payloads_for_all_four_tools() {
         let scope = BoardIdentity::decode_capabilities(
-            br#"{"board":"XIAO-ESP32-C6","firmware":"1.0.0-scope-c6","scope":true,"max_channels":3}"#,
+            br#"{"board":"XIAO-ESP32-C6","firmware":"1.1.0-scope-c6","scope":true,"max_channels":3}"#,
         )
         .unwrap();
         assert_eq!(scope.chip, BoardChip::Esp32C6);
         assert!(scope.validate(ToolId::Oscilloscope).is_ok());
 
         let sdr = BoardIdentity::decode_capabilities(
-            br#"{"board":"XIAO-ESP32-S3","firmware":"2.0.0-sdr","sdr":true}"#,
+            br#"{"board":"XIAO-ESP32-S3","firmware":"2.1.0-sdr","sdr":true}"#,
         )
         .unwrap();
         assert!(sdr.validate(ToolId::Sdr).is_ok());
@@ -509,13 +509,13 @@ mod tests {
         assert!(la.validate(ToolId::LogicAnalyzer).is_ok());
 
         let uart = BoardIdentity::decode_capabilities(
-            br#"{"board":"XIAO-ESP32-S3","firmware":"1.0.0-uart","uart_bridge":true,"tx_pin":"D6","rx_pin":"D7"}"#,
+            br#"{"board":"XIAO-ESP32-S3","firmware":"1.1.0-uart","uart_bridge":true,"tx_pin":"D6","rx_pin":"D7"}"#,
         )
         .unwrap();
         assert!(uart.validate(ToolId::SerialTerminal).is_ok());
 
         let siggen = BoardIdentity::decode_capabilities(
-            br#"{"board":"XIAO-ESP32-S3","firmware":"1.0.0-siggen","siggen":true,"max_channels":2}"#,
+            br#"{"board":"XIAO-ESP32-S3","firmware":"1.1.0-siggen","siggen":true,"max_channels":2}"#,
         )
         .unwrap();
         assert!(siggen.validate(ToolId::SignalGenerator).is_ok());
@@ -524,7 +524,7 @@ mod tests {
     #[test]
     fn rejects_wrong_target_sw_and_outdated_versions() {
         let sdr = BoardIdentity::decode_capabilities(
-            br#"{"board":"XIAO-ESP32-S3","firmware":"2.0.0-sdr","sdr":true}"#,
+            br#"{"board":"XIAO-ESP32-S3","firmware":"2.1.0-sdr","sdr":true}"#,
         )
         .unwrap();
         let err = sdr.validate(ToolId::Oscilloscope).unwrap_err();

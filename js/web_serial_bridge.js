@@ -235,7 +235,7 @@ class WebUsbDriverSession {
         new DataView(buf).setUint32(0, cfg.baudRate, true);
         await this.device.controlTransferOut({ requestType: 'vendor', recipient: 'interface', request: 0x1e, value: 0, index: this.port.dataInterfaceNumber }, buf);
         const cPar = cfg.parity === 1 ? 0x0010 : cfg.parity === 2 ? 0x0020 : 0x0000;
-        const cStop = cfg.stopBits === 2 ? 0x0002 : 0x0000;
+        const cStop = cfg.stopBits === 2 ? 0x0004 : 0x0000;
         await this.device.controlTransferOut({ requestType: 'vendor', recipient: 'interface', request: 0x03, value: ((cfg.dataBits & 0x0f) << 8) | cPar | cStop, index: this.port.dataInterfaceNumber });
         break;
       }
@@ -475,8 +475,13 @@ const state = {
   rts: false,
   status: 'waiting',
   transport: 'none',
+  deviceName: '',
+  vidPid: '',
+  portIndex: 0,
+  portCount: 0,
   autoConnectEnabled: true,
   manualDisconnect: false,
+  demoActive: false,
   flashing: false,
   reconnecting: false,
   reconnectTimer: null,
@@ -559,19 +564,43 @@ function preferredBackend() {
 function notifyState(status, transport, deviceName, vidPid, portIdx, portCount, dtr, rts, errorMessage) {
   state.status = status;
   state.transport = transport;
+  state.deviceName = deviceName ?? '';
+  state.vidPid = vidPid ?? '';
+  state.portIndex = portIdx ?? 0;
+  state.portCount = portCount ?? 0;
+  state.dtr = Boolean(dtr);
+  state.rts = Boolean(rts);
   if (state.onState) {
     state.onState(
       JSON.stringify({
         status,
         transport,
-        device_name: deviceName ?? '',
-        vid_pid: vidPid ?? '',
-        port_index: portIdx ?? 0,
-        port_count: portCount ?? 0,
-        dtr: Boolean(dtr),
-        rts: Boolean(rts),
+        device_name: state.deviceName,
+        vid_pid: state.vidPid,
+        port_index: state.portIndex,
+        port_count: state.portCount,
+        dtr: state.dtr,
+        rts: state.rts,
         error_message: errorMessage ?? '',
       }),
+    );
+  }
+}
+
+// Re-emits the current connected snapshot (used after DTR/RTS changes so the
+// Rust side and UI stay in sync with the physical line state).
+function notifyCurrentState() {
+  if (state.status === 'connected') {
+    notifyState(
+      state.status,
+      state.transport,
+      state.deviceName,
+      state.vidPid,
+      state.portIndex,
+      state.portCount,
+      state.dtr,
+      state.rts,
+      '',
     );
   }
 }
@@ -740,6 +769,7 @@ async function openWebSerial(port, cfg) {
     state.webSerialPort = port;
     if (port.writable) state.webSerialWriter = port.writable.getWriter();
     state.manualDisconnect = false;
+    state.demoActive = false;
     saveLastDevice('webserial', vid, pid, '');
     try { await port.setSignals({ dataTerminalReady: state.dtr, requestToSend: state.rts }); } catch {}
     await acquireWakeLock();
@@ -801,7 +831,10 @@ async function openWebUsb(device, cfg, portIdx = 0) {
   try {
     if (!device.opened) await device.open();
     if (!device.configuration) await device.selectConfiguration(1);
-    if (epoch !== state.epoch) return false;
+    if (epoch !== state.epoch) {
+      try { if (device.opened) await device.close(); } catch {}
+      return false;
+    }
 
     const ports = enumerateWebUsbPorts(device);
     if (ports.length === 0) {
@@ -819,7 +852,10 @@ async function openWebUsb(device, cfg, portIdx = 0) {
       try { await device.claimInterface(desc.controlInterfaceNumber); } catch {}
     }
     await device.claimInterface(desc.dataInterfaceNumber);
-    if (epoch !== state.epoch) return false;
+    if (epoch !== state.epoch) {
+      try { await device.close(); } catch {}
+      return false;
+    }
 
     const lines = resolveInitialLines(vid, desc.driverKind, state.cfg);
     state.dtr = lines.dtr;
@@ -831,6 +867,7 @@ async function openWebUsb(device, cfg, portIdx = 0) {
     const session = new WebUsbDriverSession(device, desc);
     state.webUsbSession = session;
     state.manualDisconnect = false;
+    state.demoActive = false;
     saveLastDevice('webusb', vid, pid, device.serialNumber ?? '');
     await session.init(state.cfg, state.dtr, state.rts);
     await acquireWakeLock();
@@ -873,6 +910,7 @@ async function openWebUsb(device, cfg, portIdx = 0) {
     return true;
   } catch (err) {
     await closeAll(false);
+    try { if (device.opened) await device.close(); } catch {}
     const msg = err instanceof Error ? err.message : String(err);
     const hint = msg.toLowerCase().includes('claim')
       ? `${msg} (Close Arduino IDE / Serial Monitor or use Web Serial on Desktop.)`
@@ -883,7 +921,7 @@ async function openWebUsb(device, cfg, portIdx = 0) {
 }
 
 function scheduleAutoReconnect(candidate = null, delayMs = 250, attempt = 0) {
-  if (!state.autoConnectEnabled || state.manualDisconnect || state.flashing) return;
+  if (!state.autoConnectEnabled || state.manualDisconnect || state.flashing || state.demoActive) return;
   if (state.webSerialPort || state.webUsbDevice || state.reconnecting) return;
   if (state.reconnectTimer) {
     clearTimeout(state.reconnectTimer);
@@ -892,7 +930,7 @@ function scheduleAutoReconnect(candidate = null, delayMs = 250, attempt = 0) {
 
   state.reconnectTimer = setTimeout(async () => {
     state.reconnectTimer = null;
-    if (!state.autoConnectEnabled || state.manualDisconnect || state.flashing) return;
+    if (!state.autoConnectEnabled || state.manualDisconnect || state.flashing || state.demoActive) return;
     if (state.webSerialPort || state.webUsbDevice || state.reconnecting) return;
 
     const last = loadLastDevice();
@@ -1002,6 +1040,7 @@ export async function js_connect_usb(cfgJson, initCmds) {
   if (initCmds) {
     state.initCmds = new Uint8Array(initCmds);
   }
+  state.demoActive = false;
   state.manualDisconnect = false;
 
   const backend = preferredBackend();
@@ -1093,8 +1132,10 @@ export async function js_set_signals(dtr, rts) {
   state.rts = Boolean(rts);
   if (state.transport === 'webserial' && state.webSerialPort) {
     await state.webSerialPort.setSignals({ dataTerminalReady: state.dtr, requestToSend: state.rts });
+    notifyCurrentState();
   } else if (state.transport === 'webusb' && state.webUsbSession) {
     await state.webUsbSession.setControlLines(state.dtr, state.rts);
+    notifyCurrentState();
   }
 }
 
@@ -1123,13 +1164,31 @@ export async function js_switch_usb_port(portIdx) {
   }
 }
 
+export function js_set_demo_active(active) {
+  const next = Boolean(active);
+  if (next === state.demoActive) return;
+  state.demoActive = next;
+  if (!next) return;
+
+  // Demo is a Rust-side simulator. Close any real USB session and suppress
+  // auto-reconnect so demo and physical bytes can never be interleaved.
+  state.manualDisconnect = true;
+  if (state.reconnectTimer) {
+    clearTimeout(state.reconnectTimer);
+    state.reconnectTimer = null;
+  }
+  state.epoch += 1;
+  notifyState('waiting', 'none', '', '', 0, 0, false, false, '');
+  void closeAll(false);
+}
+
 export function js_set_auto_connect(enabled, cfgJson) {
   state.autoConnectEnabled = Boolean(enabled);
   if (cfgJson) {
     const parsed = parseConfigJson(cfgJson);
     state.cfg = { ...state.cfg, ...parsed };
   }
-  if (state.autoConnectEnabled && !state.manualDisconnect && !state.flashing && !state.webSerialPort && !state.webUsbDevice) {
+  if (state.autoConnectEnabled && !state.manualDisconnect && !state.flashing && !state.demoActive && !state.webSerialPort && !state.webUsbDevice) {
     scheduleAutoReconnect(null, 80);
   } else if (!state.autoConnectEnabled && state.reconnectTimer) {
     clearTimeout(state.reconnectTimer);
@@ -1174,6 +1233,7 @@ export async function js_flash_firmware(
   let savedUsbVid = 0;
   let savedUsbPid = 0;
   let savedUsbSerial = '';
+  let flashFailed = false;
 
   try {
     onLog(`[1/4] Preparing to flash ${profile.label}...`);
@@ -1409,7 +1469,26 @@ export async function js_flash_firmware(
         scheduleAutoReconnect(null, 900);
       }
     }
+  } catch (err) {
+    flashFailed = true;
+    // A failed flash can leave the app transport closed (we closed it before
+    // invoking esptool-js) while the UI still believes it is connected. Tear
+    // down both the temporary flasher port and any stale transport state.
+    try {
+      if (port && typeof port.close === 'function') await port.close();
+    } catch {}
+    try {
+      if (webUsbDevice && webUsbDevice.opened) await webUsbDevice.close();
+    } catch {}
+    state.epoch += 1;
+    await closeAll(false);
+    const msg = err instanceof Error ? err.message : String(err);
+    notifyState('waiting', 'none', '', '', 0, 0, false, false, msg || 'Firmware flashing failed');
+    throw err;
   } finally {
     state.flashing = false;
+    if (flashFailed) {
+      scheduleAutoReconnect(null, 900);
+    }
   }
 }
