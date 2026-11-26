@@ -7,7 +7,9 @@ pub mod mismatch_modal;
 #[cfg(feature = "ui")]
 pub mod toolbar;
 
-pub use gestures::{apply_anchored_zoom, apply_horizontal_pan, GestureDelta, PinchPanTracker, TouchPoint};
+pub use gestures::{
+    apply_anchored_zoom, apply_horizontal_pan, GestureDelta, PinchPanTracker, TouchPoint,
+};
 
 #[cfg(feature = "ui")]
 pub use bottom_sheet::BottomSheet;

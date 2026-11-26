@@ -11,6 +11,17 @@
 //!   bottom sheet, and pinch-to-zoom / pan gesture math helpers.
 
 pub mod flasher;
+pub mod format;
 pub mod protocol;
+#[cfg(feature = "ui")]
+pub mod session;
 pub mod transport;
 pub mod ui;
+
+#[cfg(feature = "ui")]
+pub use session::{
+    use_hotwire_session, HotWireSession, SessionConfig, DEFAULT_HANDSHAKE_TIMEOUT_MS,
+};
+
+#[cfg(feature = "wasm")]
+pub mod web;

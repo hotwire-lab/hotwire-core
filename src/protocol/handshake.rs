@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Parsed semantic version (`major.minor.patch`) extracted from a HotWire firmware string
-/// such as `"1.2.0"`, `"1.1.0-scope-c6"`, or `"2.1.0-sdr"`.
+/// such as `"1.2.0"`, `"1.1.1-scope-c6"`, or `"2.1.1-sdr"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct FirmwareVersion {
     pub major: u16,
@@ -53,6 +53,14 @@ impl fmt::Display for FirmwareVersion {
 /// Canonical landing page URL for the HotWire Lab web suite.
 pub const HOTWIRE_HOME_URL: &str = "https://hotwire-lab.github.io/";
 
+/// Current capabilities JSON schema version emitted by HotWire firmware.
+///
+/// Schema v2 adds explicit `"schema": 2` and `"tool": "<slug>"` fields plus
+/// snake_case capability keys. Parsers must keep accepting v0/v1 payloads that
+/// omit these fields and use camelCase keys (Logic Analyzer historically used
+/// `maxRateHz` / `maxDepth`).
+pub const CAPS_SCHEMA_VERSION: u64 = 2;
+
 /// Identifies one of the five HotWire browser tools.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ToolId {
@@ -79,6 +87,23 @@ impl ToolId {
             ToolId::Sdr => "sdr",
             ToolId::SerialTerminal => "serial",
             ToolId::SignalGenerator => "siggen",
+        }
+    }
+
+    /// Parses a tool slug from a capabilities payload (`"tool": "scope"`).
+    /// Accepts repo names and common aliases for backwards compatibility.
+    pub fn from_slug(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "logic" | "logic-analyzer" | "logic_analyzer" | "la" => Some(ToolId::LogicAnalyzer),
+            "scope" | "oscilloscope" => Some(ToolId::Oscilloscope),
+            "sdr" | "software-defined-radio" | "software_defined_radio" => Some(ToolId::Sdr),
+            "serial" | "serial-terminal" | "serial_terminal" | "uart" | "uart-bridge" => {
+                Some(ToolId::SerialTerminal)
+            }
+            "siggen" | "signal-generator" | "signal_generator" | "gen" => {
+                Some(ToolId::SignalGenerator)
+            }
+            _ => None,
         }
     }
 
@@ -146,11 +171,11 @@ impl ToolId {
     /// Minimum compatible ESP32 firmware version required by each HotWire web app.
     pub const fn min_firmware_version(self) -> FirmwareVersion {
         match self {
-            ToolId::LogicAnalyzer => FirmwareVersion::new(1, 2, 0),
-            ToolId::Oscilloscope => FirmwareVersion::new(1, 1, 0),
-            ToolId::Sdr => FirmwareVersion::new(2, 1, 0),
-            ToolId::SerialTerminal => FirmwareVersion::new(1, 1, 0),
-            ToolId::SignalGenerator => FirmwareVersion::new(1, 1, 0),
+            ToolId::LogicAnalyzer => FirmwareVersion::new(1, 2, 1),
+            ToolId::Oscilloscope => FirmwareVersion::new(1, 1, 1),
+            ToolId::Sdr => FirmwareVersion::new(2, 1, 1),
+            ToolId::SerialTerminal => FirmwareVersion::new(1, 1, 1),
+            ToolId::SignalGenerator => FirmwareVersion::new(1, 1, 1),
         }
     }
 }
@@ -317,12 +342,38 @@ impl FirmwareMismatch {
 /// Unified device identity parsed from a `0x83` (`TYPE_BOARD_CAPABILITIES`) JSON payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoardIdentity {
+    /// Capabilities schema version (`0` for legacy payloads without `"schema"`).
+    pub schema: u64,
     pub board: String,
     pub chip: BoardChip,
     pub firmware: String,
     pub version: Option<FirmwareVersion>,
+    /// Tool declared explicitly by `"tool"` in schema v2, if present.
+    pub declared_tool: Option<ToolId>,
+    /// Resolved tool: `declared_tool` when present, otherwise inferred from flags/keys.
     pub detected_tool: Option<ToolId>,
     pub raw: Value,
+}
+
+/// Typed view over the common capability keys shared by all HotWire firmware.
+///
+/// Tool-specific keys remain available through [`BoardIdentity::get_u64`] and
+/// [`BoardIdentity::get_str`]; this struct centralises the fields that are
+/// commonly needed for capability gating in the web apps.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CapabilitySet {
+    pub schema: u64,
+    pub declared_tool: Option<ToolId>,
+    pub channels: Option<u64>,
+    pub max_channels: Option<u64>,
+    pub max_rate_hz: Option<u64>,
+    pub max_depth: Option<u64>,
+    pub max_iq_kb: Option<u64>,
+    pub max_baud: Option<u64>,
+    pub adc_bits: Option<u64>,
+    pub pattern_channels: Option<u64>,
+    pub max_pwm_hz: Option<u64>,
+    pub dds_rate_hz: Option<u64>,
 }
 
 impl BoardIdentity {
@@ -346,13 +397,20 @@ impl BoardIdentity {
             .unwrap_or("unknown")
             .to_string();
         let version = FirmwareVersion::parse(&firmware);
-        let detected_tool = infer_tool(&raw, &firmware);
+        let schema = raw.get("schema").and_then(Value::as_u64).unwrap_or(0);
+        let declared_tool = raw
+            .get("tool")
+            .and_then(Value::as_str)
+            .and_then(ToolId::from_slug);
+        let detected_tool = declared_tool.or_else(|| infer_tool(&raw, &firmware));
 
         Some(Self {
+            schema,
             board,
             chip,
             firmware,
             version,
+            declared_tool,
             detected_tool,
             raw,
         })
@@ -424,9 +482,45 @@ impl BoardIdentity {
     pub fn get_str(&self, key: &str) -> Option<&str> {
         self.raw.get(key).and_then(Value::as_str)
     }
+
+    /// Reads the first present unsigned integer from a list of key aliases.
+    pub fn get_u64_any(&self, keys: &[&str]) -> Option<u64> {
+        keys.iter().find_map(|key| self.get_u64(key))
+    }
+
+    /// Returns `true` when the firmware emits the current [`CAPS_SCHEMA_VERSION`].
+    pub fn is_current_schema(&self) -> bool {
+        self.schema >= CAPS_SCHEMA_VERSION
+    }
+
+    /// Typed view over the common capability keys, with camelCase aliases for
+    /// legacy payloads. Tool-specific fields stay in [`Self::raw`].
+    pub fn capabilities(&self) -> CapabilitySet {
+        CapabilitySet {
+            schema: self.schema,
+            declared_tool: self.declared_tool,
+            channels: self.get_u64_any(&["channels"]),
+            max_channels: self.get_u64_any(&["max_channels", "maxChannels"]),
+            max_rate_hz: self.get_u64_any(&["max_rate_hz", "maxRateHz"]),
+            max_depth: self.get_u64_any(&["max_depth", "maxDepth"]),
+            max_iq_kb: self.get_u64_any(&["max_iq_kb", "maxIqKb"]),
+            max_baud: self.get_u64_any(&["max_baud", "maxBaud"]),
+            adc_bits: self.get_u64_any(&["adc_bits", "adcBits"]),
+            pattern_channels: self.get_u64_any(&["pattern_channels", "patternChannels"]),
+            max_pwm_hz: self.get_u64_any(&["max_pwm_hz", "maxPwmHz"]),
+            dds_rate_hz: self.get_u64_any(&["dds_rate_hz", "ddsRateHz"]),
+        }
+    }
 }
 
 fn infer_tool(raw: &Value, firmware: &str) -> Option<ToolId> {
+    if let Some(tool) = raw
+        .get("tool")
+        .and_then(Value::as_str)
+        .and_then(ToolId::from_slug)
+    {
+        return Some(tool);
+    }
     if raw.get("siggen").and_then(Value::as_bool) == Some(true) {
         return Some(ToolId::SignalGenerator);
     }
@@ -490,41 +584,88 @@ mod tests {
     #[test]
     fn validates_real_firmware_payloads_for_all_four_tools() {
         let scope = BoardIdentity::decode_capabilities(
-            br#"{"board":"XIAO-ESP32-C6","firmware":"1.1.0-scope-c6","scope":true,"max_channels":3}"#,
+            br#"{"board":"XIAO-ESP32-C6","firmware":"1.1.1-scope-c6","scope":true,"max_channels":3}"#,
         )
         .unwrap();
         assert_eq!(scope.chip, BoardChip::Esp32C6);
         assert!(scope.validate(ToolId::Oscilloscope).is_ok());
 
         let sdr = BoardIdentity::decode_capabilities(
-            br#"{"board":"XIAO-ESP32-S3","firmware":"2.1.0-sdr","sdr":true}"#,
+            br#"{"board":"XIAO-ESP32-S3","firmware":"2.1.1-sdr","sdr":true}"#,
         )
         .unwrap();
         assert!(sdr.validate(ToolId::Sdr).is_ok());
 
         let la = BoardIdentity::decode_capabilities(
-            br#"{"board":"XIAO-ESP32-S3","firmware":"1.2.0","channels":8,"maxRateHz":20000000}"#,
+            br#"{"board":"XIAO-ESP32-S3","firmware":"1.2.1","channels":8,"maxRateHz":20000000}"#,
         )
         .unwrap();
         assert!(la.validate(ToolId::LogicAnalyzer).is_ok());
 
         let uart = BoardIdentity::decode_capabilities(
-            br#"{"board":"XIAO-ESP32-S3","firmware":"1.1.0-uart","uart_bridge":true,"tx_pin":"D6","rx_pin":"D7"}"#,
+            br#"{"board":"XIAO-ESP32-S3","firmware":"1.1.1-uart","uart_bridge":true,"tx_pin":"D6","rx_pin":"D7"}"#,
         )
         .unwrap();
         assert!(uart.validate(ToolId::SerialTerminal).is_ok());
 
         let siggen = BoardIdentity::decode_capabilities(
-            br#"{"board":"XIAO-ESP32-S3","firmware":"1.1.0-siggen","siggen":true,"max_channels":2}"#,
+            br#"{"board":"XIAO-ESP32-S3","firmware":"1.1.1-siggen","siggen":true,"max_channels":2}"#,
         )
         .unwrap();
         assert!(siggen.validate(ToolId::SignalGenerator).is_ok());
     }
 
     #[test]
+    fn parses_v2_schema_and_explicit_tool() {
+        let id = BoardIdentity::decode_capabilities(
+            br#"{"schema":2,"tool":"scope","board":"XIAO-ESP32-C6","firmware":"1.1.1-scope-c6","scope":true,"max_channels":3,"max_rate_hz":83333,"adc_bits":12}"#,
+        )
+        .unwrap();
+        assert_eq!(id.schema, CAPS_SCHEMA_VERSION);
+        assert!(id.is_current_schema());
+        assert_eq!(id.declared_tool, Some(ToolId::Oscilloscope));
+        assert_eq!(id.detected_tool, Some(ToolId::Oscilloscope));
+        let caps = id.capabilities();
+        assert_eq!(caps.max_channels, Some(3));
+        assert_eq!(caps.max_rate_hz, Some(83_333));
+        assert_eq!(caps.adc_bits, Some(12));
+        assert_eq!(caps.max_depth, None);
+    }
+
+    #[test]
+    fn accepts_legacy_camel_case_capability_aliases() {
+        let id = BoardIdentity::decode_capabilities(
+            br#"{"board":"XIAO-ESP32-S3","firmware":"1.2.1","channels":8,"maxRateHz":20000000,"maxDepth":32768}"#,
+        )
+        .unwrap();
+        assert_eq!(id.schema, 0);
+        assert!(!id.is_current_schema());
+        assert_eq!(id.detected_tool, Some(ToolId::LogicAnalyzer));
+        let caps = id.capabilities();
+        assert_eq!(caps.channels, Some(8));
+        assert_eq!(caps.max_rate_hz, Some(20_000_000));
+        assert_eq!(caps.max_depth, Some(32_768));
+    }
+
+    #[test]
+    fn parses_tool_slugs_and_aliases() {
+        assert_eq!(ToolId::from_slug("logic"), Some(ToolId::LogicAnalyzer));
+        assert_eq!(ToolId::from_slug("SCOPE"), Some(ToolId::Oscilloscope));
+        assert_eq!(
+            ToolId::from_slug("serial-terminal"),
+            Some(ToolId::SerialTerminal)
+        );
+        assert_eq!(
+            ToolId::from_slug("signal_generator"),
+            Some(ToolId::SignalGenerator)
+        );
+        assert_eq!(ToolId::from_slug("unknown"), None);
+    }
+
+    #[test]
     fn rejects_wrong_target_sw_and_outdated_versions() {
         let sdr = BoardIdentity::decode_capabilities(
-            br#"{"board":"XIAO-ESP32-S3","firmware":"2.1.0-sdr","sdr":true}"#,
+            br#"{"board":"XIAO-ESP32-S3","firmware":"2.1.1-sdr","sdr":true}"#,
         )
         .unwrap();
         let err = sdr.validate(ToolId::Oscilloscope).unwrap_err();
@@ -545,7 +686,7 @@ mod tests {
             err.kind,
             FirmwareMismatchKind::VersionTooOld {
                 found: Some(FirmwareVersion::new(1, 0, 0)),
-                required: FirmwareVersion::new(1, 2, 0),
+                required: FirmwareVersion::new(1, 2, 1),
             }
         );
         assert!(err.summary().contains("older than the required"));

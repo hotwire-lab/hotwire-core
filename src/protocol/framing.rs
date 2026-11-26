@@ -47,16 +47,7 @@ pub fn compute_crc16_ccitt(bytes: &[u8]) -> u16 {
 /// Encodes a fixed 8-byte host-to-device HotWire command frame:
 /// `[0xAA, 0x55, cmd_id, p1, p2, p3, p4, xor]`.
 pub fn encode_command_8(cmd_id: u8, p1: u8, p2: u8, p3: u8, p4: u8) -> [u8; 8] {
-    let mut frame = [
-        PROTOCOL_SYNC_0,
-        PROTOCOL_SYNC_1,
-        cmd_id,
-        p1,
-        p2,
-        p3,
-        p4,
-        0,
-    ];
+    let mut frame = [PROTOCOL_SYNC_0, PROTOCOL_SYNC_1, cmd_id, p1, p2, p3, p4, 0];
     frame[7] = compute_xor_checksum(&frame[..7]);
     frame
 }

@@ -530,7 +530,8 @@ mod wasm_transport {
             }
             let cfg_json = serde_json::to_string(&cfg).unwrap_or_default();
             spawn_local(async move {
-                let _ = wasm_bindgen_futures::JsFuture::from(js_reconfigure_serial(&cfg_json)).await;
+                let _ =
+                    wasm_bindgen_futures::JsFuture::from(js_reconfigure_serial(&cfg_json)).await;
             });
         }
 

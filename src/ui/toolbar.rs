@@ -29,8 +29,8 @@ fn extract_ua_version<'a>(ua: &'a str, marker: &str) -> Option<&'a str> {
 /// Condenses a browser User-Agent string into a concise `Browser Version · OS` label
 /// suitable for pre-filling the GitHub Bug Report `env` field.
 pub fn summarize_user_agent(ua: &str) -> String {
-    let browser = if let Some(v) = extract_ua_version(ua, "EdgA/")
-        .or_else(|| extract_ua_version(ua, "Edg/"))
+    let browser = if let Some(v) =
+        extract_ua_version(ua, "EdgA/").or_else(|| extract_ua_version(ua, "Edg/"))
     {
         format!("Edge {v}")
     } else if let Some(v) = extract_ua_version(ua, "OPR/") {
@@ -155,6 +155,7 @@ pub fn HotWireToolbar(
     on_start_demo: Callback<()>,
     #[prop(into)] flasher_open: Signal<bool>,
     on_toggle_flasher: Callback<()>,
+    #[prop(optional)] app_version: Option<&'static str>,
     #[prop(optional)] children: Option<Children>,
 ) -> impl IntoView {
     let is_active = move || transport.get().status.is_active();
@@ -171,7 +172,10 @@ pub fn HotWireToolbar(
     };
 
     let status_class = move || {
-        let base = format!("hw-status-pill hw-status-{}", transport.get().status.as_class());
+        let base = format!(
+            "hw-status-pill hw-status-{}",
+            transport.get().status.as_class()
+        );
         if is_mismatch() {
             format!("{base} hw-status-mismatch")
         } else {
@@ -527,6 +531,20 @@ pub fn HotWireToolbar(
                                 <span class="hw-modal-key">"Core"</span>
                                 <span class="hw-modal-val">{format!("v{}", env!("CARGO_PKG_VERSION"))}</span>
                             </div>
+                            {app_version.map(|version| {
+                                view! {
+                                    <div class="hw-modal-row">
+                                        <span class="hw-modal-key">"App"</span>
+                                        <span class="hw-modal-val">{format!("v{version}")}</span>
+                                    </div>
+                                }
+                            })}
+                            <div class="hw-modal-row">
+                                <span class="hw-modal-key">"Min FW"</span>
+                                <span class="hw-modal-val">
+                                    {format!("v{}+", active_tool.min_firmware_version())}
+                                </span>
+                            </div>
                         </div>
 
                         <div class="hw-about-links">
@@ -621,10 +639,12 @@ mod tests {
             ..Default::default()
         };
         let id = BoardIdentity {
+            schema: crate::protocol::CAPS_SCHEMA_VERSION,
             board: "XIAO ESP32-S3".to_string(),
             chip: BoardChip::Esp32S3,
             firmware: "v1.2.0".to_string(),
             version: None,
+            declared_tool: Some(ToolId::LogicAnalyzer),
             detected_tool: Some(ToolId::LogicAnalyzer),
             raw: serde_json::Value::Null,
         };
@@ -634,7 +654,9 @@ mod tests {
             Some(&id),
             "Mozilla/5.0 (Linux; Android 15) Chrome/132.0.0.0",
         );
-        assert!(url.starts_with("https://github.com/hotwire-lab/logic/issues/new?template=bug_report.yml"));
+        assert!(url.starts_with(
+            "https://github.com/hotwire-lab/logic/issues/new?template=bug_report.yml"
+        ));
         assert!(url.contains("&tool=Logic+Analyzer"));
         assert!(url.contains("&board=Seeed+Studio+XIAO+ESP32-S3"));
         assert!(url.contains("&firmware=v1.2.0+%28WebUSB%29"));
@@ -645,7 +667,8 @@ mod tests {
             ..Default::default()
         };
         let demo_url = build_bug_report_url(ToolId::Sdr, &demo, None, "");
-        assert!(demo_url.starts_with("https://github.com/hotwire-lab/sdr/issues/new?template=bug_report.yml"));
+        assert!(demo_url
+            .starts_with("https://github.com/hotwire-lab/sdr/issues/new?template=bug_report.yml"));
         assert!(demo_url.contains("&board=Offline+Demo+mode+%28no+hardware%29"));
 
         let feat_url = build_feature_request_url(ToolId::Oscilloscope);

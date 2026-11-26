@@ -9,8 +9,8 @@ pub use framing::{
     compute_xor_checksum, encode_command_8, encode_frame,
 };
 pub use handshake::{
-    BoardChip, BoardIdentity, FirmwareMismatch, FirmwareMismatchKind, FirmwareVersion, ToolId,
-    HOTWIRE_HOME_URL,
+    BoardChip, BoardIdentity, CapabilitySet, FirmwareMismatch, FirmwareMismatchKind,
+    FirmwareVersion, ToolId, CAPS_SCHEMA_VERSION, HOTWIRE_HOME_URL,
 };
 
 pub const PROTOCOL_SYNC_0: u8 = 0xaa;

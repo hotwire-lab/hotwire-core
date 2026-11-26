@@ -1,6 +1,6 @@
 [package]
 name = "hotwire-core"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2021"
 description = "Shared Rust/WASM core for the HotWire hardware tool suite: Web Serial/WebUSB transport, binary framing & handshake protocol, esptool-js Web Flasher, and shared Leptos UI shell."
 license = "Apache-2.0"
@@ -32,6 +32,8 @@ js-sys = { version = "0.3", optional = true }
 version = "0.3"
 optional = true
 features = [
+  "Blob",
+  "BlobPropertyBag",
   "Document",
   "DomRect",
   "Element",
@@ -39,6 +41,7 @@ features = [
   "EventTarget",
   "File",
   "FileList",
+  "HtmlAnchorElement",
   "HtmlDivElement",
   "HtmlElement",
   "HtmlInputElement",
@@ -47,5 +50,7 @@ features = [
   "Navigator",
   "Performance",
   "PointerEvent",
+  "Storage",
+  "Url",
   "Window",
 ]

@@ -1334,7 +1334,14 @@ export async function js_flash_firmware(
     }
 
     onLog('[2/4] Connecting to ROM bootloader...');
-    const { ESPLoader, Transport } = await import('https://esm.sh/esptool-js@0.7.1');
+    let esptool;
+    try {
+      esptool = await import(new URL('./vendor/esptool-js.bundle.js', document.baseURI).href);
+    } catch (localError) {
+      // Fallback for older deployments that do not bundle the vendor file yet.
+      esptool = await import('https://esm.sh/esptool-js@0.7.1');
+    }
+    const { ESPLoader, Transport } = esptool;
     let espTransport = new Transport(port, false);
     const makeLoader = (tr) =>
       new ESPLoader({

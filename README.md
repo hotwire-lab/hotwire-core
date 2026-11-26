@@ -5,13 +5,13 @@
 [![Rust + WASM](https://img.shields.io/badge/Stack-Rust_%2B_Leptos_0.7_WASM-f97316?logo=rust&logoColor=white)](https://leptos.dev/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-38bdf8)](LICENSE)
 
-Shared Rust/WebAssembly foundation (`v0.5.1`) for the five **[HotWire Lab](https://hotwire-lab.github.io/)** browser hardware tools:
+Shared Rust/WebAssembly foundation (`v0.6.0`) for the five **[HotWire Lab](https://hotwire-lab.github.io/)** browser hardware tools:
 
-* **[HotWire Logic Analyzer](https://github.com/hotwire-lab/logic)** ([Live](https://hotwire-lab.github.io/logic/)) — `v1.2.0+`
-* **[HotWire Oscilloscope](https://github.com/hotwire-lab/scope)** ([Live](https://hotwire-lab.github.io/scope/)) — `v1.0.0+`
-* **[HotWire SDR](https://github.com/hotwire-lab/sdr)** ([Live](https://hotwire-lab.github.io/sdr/)) — `v2.0.0+`
-* **[HotWire Serial Terminal](https://github.com/hotwire-lab/serial)** ([Live](https://hotwire-lab.github.io/serial/)) — `v1.0.0+` (XIAO UART Bridge mode)
-* **[HotWire Signal Generator](https://github.com/hotwire-lab/siggen)** ([Live](https://hotwire-lab.github.io/siggen/)) — `v1.0.0+`
+* **[HotWire Logic Analyzer](https://github.com/hotwire-lab/logic)** ([Live](https://hotwire-lab.github.io/logic/)) — `v1.2.1+`
+* **[HotWire Oscilloscope](https://github.com/hotwire-lab/scope)** ([Live](https://hotwire-lab.github.io/scope/)) — `v1.1.1+`
+* **[HotWire SDR](https://github.com/hotwire-lab/sdr)** ([Live](https://hotwire-lab.github.io/sdr/)) — `v2.1.1+`
+* **[HotWire Serial Terminal](https://github.com/hotwire-lab/serial)** ([Live](https://hotwire-lab.github.io/serial/)) — `v1.1.1+` (XIAO UART Bridge mode)
+* **[HotWire Signal Generator](https://github.com/hotwire-lab/siggen)** ([Live](https://hotwire-lab.github.io/siggen/)) — `v1.1.1+`
 
 `hotwire-core` encapsulates hardware connectivity, the browser JS bridge, binary framing & firmware verification, `esptool-js` Web Flashing, and the common Leptos UI shell so each tool repository focuses purely on signal processing and visualization.
 
@@ -23,7 +23,7 @@ Shared Rust/WebAssembly foundation (`v0.5.1`) for the five **[HotWire Lab](https
    * `0x83` JSON capabilities handshake ([`BoardIdentity`](src/protocol/handshake.rs), [`FirmwareVersion`](src/protocol/handshake.rs), [`FirmwareMismatch`](src/protocol/handshake.rs)) identifying the chip (`ESP32-S3` vs `ESP32-C6`), target software, and minimum compatible firmware version (`ToolId::min_firmware_version()`).
 2. **`transport`** ([`src/transport/`](src/transport/) + [`js/web_serial_bridge.js`](js/web_serial_bridge.js))
    * Unified browser USB transport ([`HotWireTransport`](src/transport/mod.rs)) bundling **Web Serial API** (desktop), **WebUSB API** user-space drivers (`CDC-ACM`, `FTDI`, `CP210x`, `CH34x`, `PL2303` on Android & desktop fallback), FIFO write queue serialization, Screen Wake Lock, hot-plug auto-reconnect, and a `Disconnected / Connecting / Connected / Demo` state machine with an injectable `DemoBackend` trait.
-   * [`HandshakeGuard`](src/transport/mod.rs) with race-free cancellation token and timeout (`3.5 s`) that validates incoming `0x83` frames and triggers disconnect + flash prompt on incompatible or missing firmware.
+   * [`HandshakeGuard`](src/transport/mod.rs) with race-free cancellation token and a configurable timeout (HotWire apps use `5 s`) that validates incoming `0x83` frames and triggers disconnect + flash prompt on incompatible or missing firmware.
 3. **`flasher`** ([`src/flasher/`](src/flasher/))
    * `esptool-js` browser flasher [`FirmwareProfile`](src/flasher/mod.rs) presets for `XIAO ESP32-S3` and `XIAO ESP32-C6` and reusable Leptos [`FlasherPanel`](src/flasher/modal.rs) component with automatic board selection and custom `.bin` flashing.
 4. **`ui`** ([`src/ui/`](src/ui/) + [`styles/core.css`](styles/core.css))
@@ -37,7 +37,7 @@ Shared Rust/WebAssembly foundation (`v0.5.1`) for the five **[HotWire Lab](https
 ```toml
 [dependencies]
 # Pinned GitHub release tag (used in CI / GitHub Pages builds):
-hotwire-core = { git = "https://github.com/hotwire-lab/hotwire-core", tag = "v0.5.1" }
+hotwire-core = { git = "https://github.com/hotwire-lab/hotwire-core", tag = "v0.6.0" }
 ```
 
 For local multi-repo development, temporarily add a Cargo patch in `.cargo/config.toml`:
