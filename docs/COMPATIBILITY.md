@@ -92,3 +92,21 @@ terminal bytes are never interpreted as HotWire frames.
 - Firmware should keep emitting legacy keys for one release after a schema change.
 - Removing or renaming a command/type requires a firmware major/minor bump and a
   corresponding `ToolId::min_firmware_version()` update.
+
+## Known limitations (2026-11)
+
+- **PL2303:** WebUSB bulk transfer and default line coding work, but
+  vendor-specific PL2303 control requests are not implemented. Prefer
+  CDC-ACM/FTDI/CP210x/CH34x adapters when possible.
+- **ANSI CSI sequences:** sequences split exactly across USB chunk boundaries
+  may render a raw fragment until the next chunk arrives.
+- **Serial viewport:** the DOM renders the newest 256 KB of formatted output;
+  the full ring buffer is retained for export.
+- **Settings persistence:** Serial Terminal and Logic channel labels persist
+  across reloads; Scope, SDR and SigGen currently keep their instrument
+  settings for the session only.
+- **WASM optimisation:** Trunk `wasm-opt` is disabled (`data-wasm-opt="0"`)
+  because binaryen 131 rejects Rust 1.100 bulk-memory output. Bundles are
+  slightly larger but builds are reproducible across local and CI toolchains.
+- **Firmware long stalls:** a host stall longer than the firmware TX buffer
+  window may truncate a streaming frame; reconnect to resynchronise.

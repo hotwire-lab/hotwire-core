@@ -63,6 +63,11 @@ arduino-cli compile --fqbn "esp32:esp32:XIAO_ESP32S3:USBMode=hwcdc,CDCOnBoot=def
 arduino-cli compile --fqbn "esp32:esp32:XIAO_ESP32C6:CDCOnBoot=cdc" --output-dir firmware/<Sketch>/build firmware/<Sketch>
 ```
 
+
+> **wasm-opt note:** HotWire apps set `data-wasm-opt="0"` because the Trunk
+> bundled binaryen 131 cannot validate Rust 1.100 bulk-memory output. Re-enable
+> wasm-opt only after verifying a newer binaryen release against the CI Rust
+> toolchain.
 ## 4. Cross-repo verification
 
 ```bash
