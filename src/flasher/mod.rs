@@ -87,6 +87,12 @@ impl ToolId {
                     "4-Ch ADC1 (D0-D3), Dual-Core GDMA, 83.3 kSPS spec + up to 1 MSPS Turbo OC",
                 c6_hint: "3-Ch ADC1 (D0-D2), GDMA Continuous up to 83.3 kSPS, eFuse calibration",
             },
+            ToolId::Bench => ToolFirmwareInfo {
+                s3_prefix: "HotWire_Bench_XIAO_ESP32S3.ino",
+                c6_prefix: "HotWire_Bench_XIAO_ESP32C6.ino",
+                s3_hint: "Mixed-signal bench: 2 analog (D0-D1) + 8 digital, 1 MSPS + LEDC generator",
+                c6_hint: "Mixed-signal bench (S3 firmware is the V0.1 reference)",
+            },
             ToolId::Sdr => ToolFirmwareInfo {
                 s3_prefix: "HotWire_SDR_XIAO_ESP32S3.ino",
                 c6_prefix: "HotWire_SDR_XIAO_ESP32C6.ino",

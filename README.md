@@ -5,9 +5,10 @@
 [![Rust + WASM](https://img.shields.io/badge/Stack-Rust_%2B_Leptos_0.7_WASM-f97316?logo=rust&logoColor=white)](https://leptos.dev/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-38bdf8)](LICENSE)
 
-Shared Rust/WebAssembly foundation (`v0.6.0`) for the five **[HotWire Lab](https://hotwire-lab.github.io/)** browser hardware tools:
+Shared Rust/WebAssembly foundation (`v0.7.0`) for the six **[HotWire Lab](https://hotwire-lab.github.io/)** browser hardware tools:
 
-* **[HotWire Logic Analyzer](https://github.com/hotwire-lab/logic)** ([Live](https://hotwire-lab.github.io/logic/)) — `v1.2.1+`
+* **[HotWire Bench](https://github.com/hotwire-lab/bench)** ([Live](https://hotwire-lab.github.io/bench/)) - `v0.1.0+`
+* **[HotWire Logic Analyzer](https://github.com/hotwire-lab/logic)** ([Live](https://hotwire-lab.github.io/logic/)) - `v1.2.1+`
 * **[HotWire Oscilloscope](https://github.com/hotwire-lab/scope)** ([Live](https://hotwire-lab.github.io/scope/)) — `v1.1.1+`
 * **[HotWire SDR](https://github.com/hotwire-lab/sdr)** ([Live](https://hotwire-lab.github.io/sdr/)) — `v2.1.1+`
 * **[HotWire Serial Terminal](https://github.com/hotwire-lab/serial)** ([Live](https://hotwire-lab.github.io/serial/)) — `v1.1.1+` (XIAO UART Bridge mode)
@@ -32,7 +33,7 @@ Shared Rust/WebAssembly foundation (`v0.6.0`) for the five **[HotWire Lab](https
    * Reusable Leptos [`FlasherPanel`](src/flasher/modal.rs) with automatic board selection and custom `.bin` flashing; apps ship a vendored `esptool-js` bundle under `public/vendor/`.
 5. **`ui`** ([`src/ui/`](src/ui/) + [`styles/core.css`](styles/core.css))
    * Shared dark theme CSS ([`HotWireTheme`](src/ui/mod.rs)), `.hw-app` shell, self-hosted IBM Plex fonts and reduced-motion/focus-visible defaults.
-   * Slottable top toolbar with home link (`hotwire-lab.github.io`), `Logic / Scope / SDR / Serial / Gen` tool switcher, About/Help diagnostics modal (app + core + minimum firmware versions), and firmware status pill ([`HotWireToolbar`](src/ui/toolbar.rs)).
+   * Slottable top toolbar with home link (`hotwire-lab.github.io`), `Logic / Scope / Bench / SDR / Serial / Gen` tool switcher, About/Help diagnostics modal (app + core + minimum firmware versions), and firmware status pill ([`HotWireToolbar`](src/ui/toolbar.rs)).
    * Automatic [`FirmwareMismatchModal`](src/ui/mismatch_modal.rs) pop-up offering one-click jump to the Web Flasher or the matching HotWire tool.
    * Swipe-to-dismiss mobile [`BottomSheet`](src/ui/bottom_sheet.rs) and pure-Rust [`PinchPanTracker`](src/ui/gestures.rs) + cursor-anchored zoom/pan math helpers.
 6. **`format` / `web`** ([`src/format.rs`](src/format.rs), [`src/web.rs`](src/web.rs))
@@ -43,7 +44,7 @@ Shared Rust/WebAssembly foundation (`v0.6.0`) for the five **[HotWire Lab](https
 ```toml
 [dependencies]
 # Pinned GitHub release tag (used in CI / GitHub Pages builds):
-hotwire-core = { git = "https://github.com/hotwire-lab/hotwire-core", tag = "v0.6.0" }
+hotwire-core = { git = "https://github.com/hotwire-lab/hotwire-core", tag = "v0.7.0" }
 ```
 
 For local multi-repo development, temporarily add a Cargo patch in `.cargo/config.toml`:
@@ -68,3 +69,5 @@ node --check js/web_serial_bridge.js
 ## License
 
 Copyright © 2026 Kari Vierimaa, Kempele — Licensed under the [Apache License 2.0](LICENSE).
+
+

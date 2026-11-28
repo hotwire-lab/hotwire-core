@@ -61,20 +61,22 @@ pub const HOTWIRE_HOME_URL: &str = "https://hotwire-lab.github.io/";
 /// `maxRateHz` / `maxDepth`).
 pub const CAPS_SCHEMA_VERSION: u64 = 2;
 
-/// Identifies one of the five HotWire browser tools.
+/// Identifies one of the six HotWire browser tools.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ToolId {
     LogicAnalyzer,
     Oscilloscope,
+    Bench,
     Sdr,
     SerialTerminal,
     SignalGenerator,
 }
 
 impl ToolId {
-    pub const ALL: [ToolId; 5] = [
+    pub const ALL: [ToolId; 6] = [
         ToolId::LogicAnalyzer,
         ToolId::Oscilloscope,
+        ToolId::Bench,
         ToolId::Sdr,
         ToolId::SerialTerminal,
         ToolId::SignalGenerator,
@@ -84,6 +86,7 @@ impl ToolId {
         match self {
             ToolId::LogicAnalyzer => "logic",
             ToolId::Oscilloscope => "scope",
+            ToolId::Bench => "bench",
             ToolId::Sdr => "sdr",
             ToolId::SerialTerminal => "serial",
             ToolId::SignalGenerator => "siggen",
@@ -96,6 +99,9 @@ impl ToolId {
         match value.trim().to_ascii_lowercase().as_str() {
             "logic" | "logic-analyzer" | "logic_analyzer" | "la" => Some(ToolId::LogicAnalyzer),
             "scope" | "oscilloscope" => Some(ToolId::Oscilloscope),
+            "bench" | "mixed-signal" | "mixed_signal" | "mixed-signal-bench" => {
+                Some(ToolId::Bench)
+            }
             "sdr" | "software-defined-radio" | "software_defined_radio" => Some(ToolId::Sdr),
             "serial" | "serial-terminal" | "serial_terminal" | "uart" | "uart-bridge" => {
                 Some(ToolId::SerialTerminal)
@@ -111,6 +117,7 @@ impl ToolId {
         match self {
             ToolId::LogicAnalyzer => "HotWire Logic Analyzer",
             ToolId::Oscilloscope => "HotWire Oscilloscope",
+            ToolId::Bench => "HotWire Bench",
             ToolId::Sdr => "HotWire SDR",
             ToolId::SerialTerminal => "HotWire Serial Terminal",
             ToolId::SignalGenerator => "HotWire Signal Generator",
@@ -121,6 +128,7 @@ impl ToolId {
         match self {
             ToolId::LogicAnalyzer => "Logic",
             ToolId::Oscilloscope => "Scope",
+            ToolId::Bench => "Bench",
             ToolId::Sdr => "SDR",
             ToolId::SerialTerminal => "Serial",
             ToolId::SignalGenerator => "Gen",
@@ -131,6 +139,7 @@ impl ToolId {
         match self {
             ToolId::LogicAnalyzer => "https://hotwire-lab.github.io/logic/",
             ToolId::Oscilloscope => "https://hotwire-lab.github.io/scope/",
+            ToolId::Bench => "https://hotwire-lab.github.io/bench/",
             ToolId::Sdr => "https://hotwire-lab.github.io/sdr/",
             ToolId::SerialTerminal => "https://hotwire-lab.github.io/serial/",
             ToolId::SignalGenerator => "https://hotwire-lab.github.io/siggen/",
@@ -141,6 +150,7 @@ impl ToolId {
         match self {
             ToolId::LogicAnalyzer => "https://github.com/hotwire-lab/logic",
             ToolId::Oscilloscope => "https://github.com/hotwire-lab/scope",
+            ToolId::Bench => "https://github.com/hotwire-lab/bench",
             ToolId::Sdr => "https://github.com/hotwire-lab/sdr",
             ToolId::SerialTerminal => "https://github.com/hotwire-lab/serial",
             ToolId::SignalGenerator => "https://github.com/hotwire-lab/siggen",
@@ -152,6 +162,7 @@ impl ToolId {
         match self {
             ToolId::LogicAnalyzer => "Logic Analyzer",
             ToolId::Oscilloscope => "Oscilloscope",
+            ToolId::Bench => "Bench",
             ToolId::Sdr => "SDR",
             ToolId::SerialTerminal => "Serial Terminal",
             ToolId::SignalGenerator => "Signal Generator",
@@ -162,6 +173,7 @@ impl ToolId {
         match self {
             ToolId::LogicAnalyzer => "#58a6ff",
             ToolId::Oscilloscope => "#facc15",
+            ToolId::Bench => "#2dd4bf",
             ToolId::Sdr => "#a855f7",
             ToolId::SerialTerminal => "#4ade80",
             ToolId::SignalGenerator => "#fb7185",
@@ -173,6 +185,7 @@ impl ToolId {
         match self {
             ToolId::LogicAnalyzer => FirmwareVersion::new(1, 2, 1),
             ToolId::Oscilloscope => FirmwareVersion::new(1, 1, 1),
+            ToolId::Bench => FirmwareVersion::new(0, 1, 0),
             ToolId::Sdr => FirmwareVersion::new(2, 1, 1),
             ToolId::SerialTerminal => FirmwareVersion::new(1, 1, 1),
             ToolId::SignalGenerator => FirmwareVersion::new(1, 1, 1),
@@ -521,6 +534,9 @@ fn infer_tool(raw: &Value, firmware: &str) -> Option<ToolId> {
     {
         return Some(tool);
     }
+    if raw.get("bench").and_then(Value::as_bool) == Some(true) {
+        return Some(ToolId::Bench);
+    }
     if raw.get("siggen").and_then(Value::as_bool) == Some(true) {
         return Some(ToolId::SignalGenerator);
     }
@@ -543,6 +559,8 @@ fn infer_tool(raw: &Value, firmware: &str) -> Option<ToolId> {
     let fw_lower = firmware.to_lowercase();
     if fw_lower.contains("siggen") {
         Some(ToolId::SignalGenerator)
+    } else if fw_lower.contains("bench") {
+        Some(ToolId::Bench)
     } else if fw_lower.contains("scope") {
         Some(ToolId::Oscilloscope)
     } else if fw_lower.contains("sdr") {
@@ -613,6 +631,15 @@ mod tests {
         )
         .unwrap();
         assert!(siggen.validate(ToolId::SignalGenerator).is_ok());
+
+        let bench = BoardIdentity::decode_capabilities(
+            br#"{"schema":2,"tool":"bench","bench":true,"board":"XIAO-ESP32-S3","firmware":"0.1.0-bench","channels":8,"analogChannels":2,"max_rate_hz":1000000}"#,
+        )
+        .unwrap();
+        assert_eq!(bench.chip, BoardChip::Esp32S3);
+        assert_eq!(bench.declared_tool, Some(ToolId::Bench));
+        assert!(bench.validate(ToolId::Bench).is_ok());
+        assert_eq!(ToolId::from_slug("mixed-signal"), Some(ToolId::Bench));
     }
 
     #[test]
