@@ -7,7 +7,7 @@
 
 Shared Rust/WebAssembly foundation (`v0.7.1`) for the six **[HotWire Lab](https://hotwire-lab.github.io/)** browser hardware tools:
 
-* **[HotWire Bench](https://github.com/hotwire-lab/bench)** ([Live](https://hotwire-lab.github.io/bench/)) - `v0.1.0+`
+* **[HotWire Bench](https://github.com/hotwire-lab/bench)** ([Live](https://hotwire-lab.github.io/bench/)) - `v0.2.0+`
 * **[HotWire Logic Analyzer](https://github.com/hotwire-lab/logic)** ([Live](https://hotwire-lab.github.io/logic/)) - `v1.2.1+`
 * **[HotWire Oscilloscope](https://github.com/hotwire-lab/scope)** ([Live](https://hotwire-lab.github.io/scope/)) — `v1.1.1+`
 * **[HotWire SDR](https://github.com/hotwire-lab/sdr)** ([Live](https://hotwire-lab.github.io/sdr/)) — `v2.1.1+`
@@ -69,6 +69,7 @@ node --check js/web_serial_bridge.js
 ## License
 
 Copyright © 2026 Kari Vierimaa, Kempele — Licensed under the [Apache License 2.0](LICENSE).
+
 
 
 
