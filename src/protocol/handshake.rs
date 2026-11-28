@@ -185,7 +185,7 @@ impl ToolId {
         match self {
             ToolId::LogicAnalyzer => FirmwareVersion::new(1, 2, 1),
             ToolId::Oscilloscope => FirmwareVersion::new(1, 1, 1),
-            ToolId::Bench => FirmwareVersion::new(0, 1, 0),
+            ToolId::Bench => FirmwareVersion::new(0, 2, 0),
             ToolId::Sdr => FirmwareVersion::new(2, 1, 1),
             ToolId::SerialTerminal => FirmwareVersion::new(1, 1, 1),
             ToolId::SignalGenerator => FirmwareVersion::new(1, 1, 1),
@@ -719,3 +719,4 @@ mod tests {
         assert!(err.summary().contains("older than the required"));
     }
 }
+

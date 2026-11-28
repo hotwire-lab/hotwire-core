@@ -5,7 +5,7 @@
 [![Rust + WASM](https://img.shields.io/badge/Stack-Rust_%2B_Leptos_0.7_WASM-f97316?logo=rust&logoColor=white)](https://leptos.dev/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-38bdf8)](LICENSE)
 
-Shared Rust/WebAssembly foundation (`v0.7.0`) for the six **[HotWire Lab](https://hotwire-lab.github.io/)** browser hardware tools:
+Shared Rust/WebAssembly foundation (`v0.7.1`) for the six **[HotWire Lab](https://hotwire-lab.github.io/)** browser hardware tools:
 
 * **[HotWire Bench](https://github.com/hotwire-lab/bench)** ([Live](https://hotwire-lab.github.io/bench/)) - `v0.1.0+`
 * **[HotWire Logic Analyzer](https://github.com/hotwire-lab/logic)** ([Live](https://hotwire-lab.github.io/logic/)) - `v1.2.1+`
@@ -44,7 +44,7 @@ Shared Rust/WebAssembly foundation (`v0.7.0`) for the six **[HotWire Lab](https:
 ```toml
 [dependencies]
 # Pinned GitHub release tag (used in CI / GitHub Pages builds):
-hotwire-core = { git = "https://github.com/hotwire-lab/hotwire-core", tag = "v0.7.0" }
+hotwire-core = { git = "https://github.com/hotwire-lab/hotwire-core", tag = "v0.7.1" }
 ```
 
 For local multi-repo development, temporarily add a Cargo patch in `.cargo/config.toml`:
@@ -69,5 +69,6 @@ node --check js/web_serial_bridge.js
 ## License
 
 Copyright © 2026 Kari Vierimaa, Kempele — Licensed under the [Apache License 2.0](LICENSE).
+
 
 
