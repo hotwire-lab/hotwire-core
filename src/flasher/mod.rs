@@ -90,7 +90,7 @@ impl ToolId {
             ToolId::Bench => ToolFirmwareInfo {
                 s3_prefix: "HotWire_Bench_XIAO_ESP32S3.ino",
                 c6_prefix: "HotWire_Bench_XIAO_ESP32C6.ino",
-                s3_hint: "Mixed-signal bench: 2 analog (D0-D1) + 8 digital, 1 MSPS + LEDC generator",
+                s3_hint: "Mixed-signal bench: 8 configurable AD/DI/DO channels, 1 MSPS digital + per-pin outputs",
                 c6_hint: "Mixed-signal bench (S3 firmware is the V0.1 reference)",
             },
             ToolId::Sdr => ToolFirmwareInfo {
@@ -197,3 +197,4 @@ mod tests {
         assert!(json.contains("\"base_url\":\"./firmware\""));
     }
 }
+
